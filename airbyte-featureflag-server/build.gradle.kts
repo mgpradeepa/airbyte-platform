@@ -8,9 +8,6 @@ dependencies {
   ksp(libs.v3.swagger.annotations)
   ksp(platform(libs.micronaut.platform))
 
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
-  annotationProcessor(libs.micronaut.jaxrs.processor)
-  annotationProcessor(platform(libs.micronaut.platform))
 
   compileOnly(libs.v3.swagger.annotations)
   compileOnly(libs.micronaut.openapi.annotations)
@@ -23,7 +20,7 @@ dependencies {
   implementation(libs.micronaut.security)
   implementation(libs.v3.swagger.annotations)
   implementation(libs.jackson.databind)
-  implementation(libs.jackson.dataformat)
+  implementation(libs.jackson.dataformat.yml)
   implementation(libs.jackson.kotlin)
   implementation(libs.kotlin.logging)
 
@@ -44,12 +41,11 @@ airbyte {
     defaultJvmArgs = listOf("-XX:+ExitOnOutOfMemoryError", "-XX:MaxRAMPercentage=75.0")
     localEnvVars.putAll(
       mapOf(
-        "AIRBYTE_ROLE" to "undefined",
         "AIRBYTE_VERSION" to "dev",
         "MICRONAUT_ENVIRONMENTS" to "control-plane",
         "SERVICE_NAME" to project.name,
         "TRACKING_STRATEGY" to "logging",
-      )
+      ),
     )
   }
   docker {

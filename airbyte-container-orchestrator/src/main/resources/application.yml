@@ -34,17 +34,19 @@ micronaut:
         port: ${STATSD_PORT:8125}
   security:
     enabled: false
-
 airbyte:
-  workload-id: ${WORKLOAD_ID:}
-  connection-id: ${CONNECTION_ID:}
-  job-id: ${JOB_ID:}
-  attempt-id: ${ATTEMPT_ID:}
+  airbyte-url: ${AIRBYTE_URL:}
+  license-key: ${AIRBYTE_LICENSE_KEY:empty}
+  container.orchestrator:
+    platform-mode: ${PLATFORM_MODE:ORCHESTRATOR}
+  context:
+    attempt-id: ${ATTEMPT_ID:0}
+    connection-id: ${CONNECTION_ID:}
+    job-id: ${JOB_ID:0}
+    workload-id: ${WORKLOAD_ID:}
+    workspace-id: ${WORKSPACE_ID:}
   edition: ${AIRBYTE_EDITION:COMMUNITY}
-  role: ${AIRBYTE_ROLE:dev}
   version: ${AIRBYTE_VERSION:dev}
-  config-dir: ${AIRBYTE_CONFIG_DIR:/config}
-  staging-dir: ${AIRBYTE_STAGING_DIRECTORY}
   acceptance:
     test:
       enabled: ${ACCEPTANCE_TEST_ENABLED:false}
@@ -57,7 +59,7 @@ airbyte:
       publish-delay-threshold-ms: ${PUB_SUB_PUBLISH_DELAY_THRESHOLD_MS:100}
       error-reporting:
         sentry:
-          dsn: ${JOB_ERROR_REPORTING_SENTRY_DSN}
+          dsn: ${JOB_ERROR_REPORTING_SENTRY_DSN:}
         strategy: ${JOB_ERROR_REPORTING_STRATEGY:LOGGING}
     storage:
       type: ${STORAGE_TYPE}
@@ -68,7 +70,7 @@ airbyte:
         activity-payload: ${STORAGE_BUCKET_ACTIVITY_PAYLOAD}
         audit-logging: ${STORAGE_BUCKET_AUDIT_LOGGING}
       azure:
-        connection-string: ${AZURE_STORAGE_CONNECTION_STRING}
+        connection-string: ${AZURE_STORAGE_CONNECTION_STRING:}
       gcs:
         application-credentials: ${GOOGLE_APPLICATION_CREDENTIALS:}
       minio:
@@ -79,6 +81,9 @@ airbyte:
         access-key: ${AWS_ACCESS_KEY_ID:}
         region: ${AWS_DEFAULT_REGION:}
         secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+  connector:
+    config-dir: ${AIRBYTE_CONFIG_DIR:/config}
+    staging-dir: ${AIRBYTE_STAGING_DIRECTORY:}
   control:
     plane:
       auth-endpoint: ${CONTROL_PLANE_AUTH_ENDPOINT:}
@@ -88,20 +93,22 @@ airbyte:
         credentials-path: ${DATA_PLANE_SERVICE_ACCOUNT_CREDENTIALS_PATH:}
         email: ${DATA_PLANE_SERVICE_ACCOUNT_EMAIL:}
   feature-flag:
-    client: ${FEATURE_FLAG_CLIENT:config}
+    client: ${FEATURE_FLAG_CLIENT:CONFIGFILE}
     path: ${FEATURE_FLAG_PATH:/flags}
     api-key: ${LAUNCHDARKLY_KEY:}
     base-url: ${FEATURE_FLAG_BASEURL:}
   internal-api:
-    auth-header:
-      name: ${AIRBYTE_API_AUTH_HEADER_NAME:}
-      value: ${AIRBYTE_API_AUTH_HEADER_VALUE:}
     base-path: ${INTERNAL_API_HOST}/api
     connect-timeout-seconds: ${AIRBYTE_API_CONNECT_TIMEOUT_SECONDS:30}
     read-timeout-seconds: ${AIRBYTE_API_READ_TIMEOUT_SECONDS:600}
     retries:
       delay-seconds: ${AIRBYTE_API_RETRY_DELAY_SECONDS:2}
       max: ${AIRBYTE_API_MAX_RETRIES:5}
+    auth:
+      type: DATAPLANE_ACCESS_TOKEN
+      token-endpoint: ${CONTROL_PLANE_TOKEN_ENDPOINT}
+      client-id: ${DATAPLANE_CLIENT_ID}
+      client-secret: ${DATAPLANE_CLIENT_SECRET}
   tracking:
     strategy: ${TRACKING_STRATEGY:LOGGING}
     write-key: ${SEGMENT_WRITE_KEY:}
@@ -111,8 +118,10 @@ airbyte:
       persistence-flush-period-sec: ${REPLICATION_FLUSH_PERIOD_SECONDS:10}
   workload-api:
     base-path: ${WORKLOAD_API_HOST:}
-    bearer-token: ${WORKLOAD_API_BEARER_TOKEN:}
     connect-timeout-seconds: ${WORKLOAD_API_CONNECT_TIMEOUT_SECONDS:30}
+    heartbeat:
+      interval-seconds: ${WORKLOAD_API_HEARTBEAT_INTERVAL_SECONDS:10}
+      timeout-seconds: ${WORKLOAD_API_HEARTBEAT_TIMEOUT_SECONDS:600}
     read-timeout-seconds: ${WORKLOAD_API_READ_TIMEOUT_SECONDS:300}
     retries:
       delay-seconds: ${WORKLOAD_API_RETRY_DELAY_SECONDS:2}
@@ -120,6 +129,8 @@ airbyte:
   workspace-root: ${WORKSPACE_ROOT}
 
 endpoints:
+  all:
+    port: 8085
   beans:
     enabled: true
     sensitive: false

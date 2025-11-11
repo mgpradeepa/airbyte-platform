@@ -6,12 +6,12 @@ package io.airbyte.server.config.community.auth
 
 import io.airbyte.api.problems.model.generated.ProblemMessageData
 import io.airbyte.api.problems.throwable.generated.ForbiddenProblem
+import io.airbyte.commons.DEFAULT_USER_ID
 import io.airbyte.commons.auth.RequiresAuthMode
 import io.airbyte.commons.auth.config.AuthMode
-import io.airbyte.commons.server.support.RbacRoleHelper
-import io.airbyte.config.persistence.OrganizationPersistence
-import io.airbyte.config.persistence.UserPersistence
-import io.airbyte.data.config.InstanceAdminConfig
+import io.airbyte.commons.auth.roles.AuthRole
+import io.airbyte.data.services.OrganizationService
+import io.airbyte.micronaut.runtime.AirbyteAuthConfig
 import io.micronaut.http.HttpRequest
 import io.micronaut.security.authentication.AuthenticationRequest
 import io.micronaut.security.authentication.AuthenticationResponse
@@ -27,8 +27,8 @@ const val SESSION_ID = "sessionId"
 @Singleton
 @RequiresAuthMode(AuthMode.SIMPLE)
 class CommunityAuthProvider<B>(
-  private val instanceAdminConfig: InstanceAdminConfig,
-  private val organizationPersistence: OrganizationPersistence,
+  private val airbyteAuthConfig: AirbyteAuthConfig,
+  private val organizationService: OrganizationService,
 ) : HttpRequestAuthenticationProvider<B> {
   override fun authenticate(
     requestContext: HttpRequest<B>?,
@@ -37,17 +37,18 @@ class CommunityAuthProvider<B>(
     // The authRequest identity must match the default organization's email address that
     // was collected during the instanceConfiguration step.
     val defaultOrgEmail =
-      organizationPersistence.defaultOrganization
+      organizationService
+        .getDefaultOrganization()
         .orElseThrow {
           ForbiddenProblem(ProblemMessageData().message("Default organization not found. Cannot authenticate."))
         }.email
 
-    if (authRequest.identity == defaultOrgEmail && authRequest.secret == instanceAdminConfig.password) {
+    if (authRequest.identity == defaultOrgEmail && authRequest.secret == airbyteAuthConfig.instanceAdmin.password) {
       val sessionId = UUID.randomUUID()
       val authenticationResponse =
         AuthenticationResponse.success(
-          UserPersistence.DEFAULT_USER_ID.toString(),
-          RbacRoleHelper.getInstanceAdminRoles(),
+          DEFAULT_USER_ID.toString(),
+          AuthRole.getInstanceAdminRoles(),
           mapOf(SESSION_ID to sessionId.toString()),
         )
       return authenticationResponse

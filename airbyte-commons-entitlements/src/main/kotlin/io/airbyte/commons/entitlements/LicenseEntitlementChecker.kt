@@ -6,9 +6,11 @@ package io.airbyte.commons.entitlements
 
 import io.airbyte.api.problems.model.generated.ProblemLicenseEntitlementData
 import io.airbyte.api.problems.throwable.generated.LicenseEntitlementProblem
+import io.airbyte.commons.entitlements.models.ConfigTemplateEntitlement
 import io.airbyte.config.ActorType
 import io.airbyte.data.services.DestinationService
 import io.airbyte.data.services.SourceService
+import io.airbyte.domain.models.OrganizationId
 import io.micronaut.cache.annotation.Cacheable
 import jakarta.inject.Singleton
 import java.util.UUID
@@ -16,14 +18,16 @@ import java.util.UUID
 enum class Entitlement {
   SOURCE_CONNECTOR,
   DESTINATION_CONNECTOR,
+  CONFIG_TEMPLATE_ENDPOINTS,
 }
 
 /**
  * Consolidates license checks across editions.
  */
+@Deprecated("Please use EntitlementService in place of this")
 @Singleton
 open class LicenseEntitlementChecker(
-  private val entitlementProvider: EntitlementProvider,
+  private val entitlementService: EntitlementService,
   private val sourceService: SourceService,
   private val destinationService: DestinationService,
 ) {
@@ -47,6 +51,21 @@ open class LicenseEntitlementChecker(
     when (entitlement) {
       Entitlement.SOURCE_CONNECTOR -> checkConnectorEntitlements(organizationId, ActorType.SOURCE, resourceIds)
       Entitlement.DESTINATION_CONNECTOR -> checkConnectorEntitlements(organizationId, ActorType.DESTINATION, resourceIds)
+      else -> resourceIds.associateWith { _ -> false }
+    }
+
+  /**
+   * Checks if the current license is entitled
+   */
+  fun checkEntitlements(
+    organizationId: UUID,
+    entitlement: Entitlement,
+  ): Boolean =
+    when (entitlement) {
+      Entitlement.CONFIG_TEMPLATE_ENDPOINTS -> checkConfigTemplateEntitlement(organizationId)
+      else -> {
+        false
+      }
     }
 
   /**
@@ -66,6 +85,18 @@ open class LicenseEntitlementChecker(
     }
   }
 
+  fun ensureEntitled(
+    organizationId: UUID,
+    entitlement: Entitlement,
+  ) {
+    if (!checkEntitlements(organizationId, entitlement)) {
+      throw LicenseEntitlementProblem(
+        ProblemLicenseEntitlementData()
+          .entitlement(entitlement.name),
+      )
+    }
+  }
+
   @Cacheable("entitlement-enterprise-connector")
   protected open fun isEnterpriseConnector(
     actorType: ActorType,
@@ -76,13 +107,21 @@ open class LicenseEntitlementChecker(
       ActorType.DESTINATION -> destinationService.getStandardDestinationDefinition(actorDefinitionId).enterprise
     }
 
+  private fun checkConfigTemplateEntitlement(organizationId: UUID): Boolean =
+    entitlementService.checkEntitlement(OrganizationId(organizationId), ConfigTemplateEntitlement).isEntitled
+
   private fun checkConnectorEntitlements(
     organizationId: UUID,
     actorType: ActorType,
     actorDefinitionIds: List<UUID>,
   ): Map<UUID, Boolean> {
     val enterpriseConnectorIds = actorDefinitionIds.filter { isEnterpriseConnector(actorType, it) }
-    val grantedEnterpriseConnectorMap = entitlementProvider.hasEnterpriseConnectorEntitlements(organizationId, actorType, enterpriseConnectorIds)
+    val grantedEnterpriseConnectorMap =
+      entitlementService.hasEnterpriseConnectorEntitlements(
+        OrganizationId(organizationId),
+        actorType,
+        enterpriseConnectorIds,
+      )
 
     // non-enterprise connectors are always granted
     return actorDefinitionIds.associateWith { grantedEnterpriseConnectorMap.getOrDefault(it, true) }

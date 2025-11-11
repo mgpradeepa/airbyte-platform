@@ -1,24 +1,31 @@
 import { FormattedMessage } from "react-intl";
 
 import { Box } from "components/ui/Box";
+import { BrandingBadge } from "components/ui/BrandingBadge";
 import { Text } from "components/ui/Text";
 
 import { FeatureItem, useFeature } from "core/services/features";
-import { useExperiment } from "hooks/services/Experiment";
+import { useOrganizationSubscriptionStatus } from "core/utils/useOrganizationSubscriptionStatus";
 
 import { CancelInvitationMenuItem } from "./CancelInvitationMenuItem";
 import { ChangeRoleMenuItem } from "./ChangeRoleMenuItem";
 import { RemoveRoleMenuItem } from "./RemoveRoleMenuItem";
 import styles from "./RoleManagementMenuBody.module.scss";
-import { ResourceType, UnifiedUserModel, permissionStringDictionary, permissionsByResourceType } from "./util";
+import {
+  ResourceType,
+  UnifiedUserModel,
+  isTeamsFeaturePermissionType,
+  permissionStringDictionary,
+  permissionsByResourceType,
+} from "./util";
 interface RoleManagementMenuBodyProps {
   user: UnifiedUserModel;
   resourceType: ResourceType;
   close: () => void;
 }
 export const RoleManagementMenuBody: React.FC<RoleManagementMenuBodyProps> = ({ user, resourceType, close }) => {
+  const { isUnifiedTrialPlan } = useOrganizationSubscriptionStatus();
   const areAllRbacRolesEnabled = useFeature(FeatureItem.AllowAllRBACRoles);
-  const improvedOrganizationRbac = useExperiment("settings.organizationRbacImprovements");
   const rolesToAllow = !user.invitationStatus && areAllRbacRolesEnabled ? permissionsByResourceType[resourceType] : [];
 
   const showOrgRoleInWorkspaceMenu =
@@ -28,9 +35,8 @@ export const RoleManagementMenuBody: React.FC<RoleManagementMenuBodyProps> = ({ 
 
   // user is invited but not yet accepted
   const showCancelInvite = !!user.invitationStatus;
-  // user is not invited (so has a relevant permission) and we're in a workspace OR the new UI is enabled
-  // whether or not the button is disabled (due to, for instance, the user being the current user or having an org permission in the workspace table) is handled in the component
-  const showRemoveUser = !user.invitationStatus && (resourceType === "workspace" || improvedOrganizationRbac);
+  // user is not invited (so has a relevant permission) and we're in a workspace OR organization
+  const showRemoveUser = !user.invitationStatus;
 
   return (
     <ul className={styles.roleManagementMenu__rolesList}>
@@ -50,6 +56,9 @@ export const RoleManagementMenuBody: React.FC<RoleManagementMenuBodyProps> = ({ 
                 }}
               />
             </Text>
+            {isTeamsFeaturePermissionType(user?.organizationPermission?.permissionType) && isUnifiedTrialPlan && (
+              <BrandingBadge product="cloudForTeams" />
+            )}
           </Box>
         </li>
       )}

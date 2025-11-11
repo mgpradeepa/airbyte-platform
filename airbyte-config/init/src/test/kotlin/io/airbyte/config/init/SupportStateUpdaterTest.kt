@@ -15,7 +15,6 @@ import io.airbyte.config.init.BreakingChangeNotificationHelper.BreakingChangeNot
 import io.airbyte.config.init.SupportStateUpdater.SupportStateUpdate
 import io.airbyte.config.persistence.BreakingChangesHelper
 import io.airbyte.config.persistence.BreakingChangesHelper.WorkspaceBreakingChangeInfo
-import io.airbyte.data.exceptions.ConfigNotFoundException
 import io.airbyte.data.services.ActorDefinitionService
 import io.airbyte.data.services.DestinationService
 import io.airbyte.data.services.SourceService
@@ -23,7 +22,6 @@ import io.airbyte.featureflag.ANONYMOUS
 import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.featureflag.NotifyBreakingChangesOnSupportStateUpdate
 import io.airbyte.featureflag.Workspace
-import io.airbyte.validation.json.JsonValidationException
 import io.mockk.Called
 import io.mockk.confirmVerified
 import io.mockk.every
@@ -33,7 +31,6 @@ import io.mockk.verify
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import java.io.IOException
 import java.time.LocalDate
 import java.util.UUID
 
@@ -86,7 +83,6 @@ internal class SupportStateUpdaterTest {
   }
 
   @Test
-  @Throws(ConfigNotFoundException::class, IOException::class)
   fun `updating support state for a custom destination should be a no op`() {
     supportStateUpdater.updateSupportStatesForDestinationDefinition(StandardDestinationDefinition().withCustom(true))
     verify { mActorDefinitionService wasNot Called }
@@ -95,7 +91,6 @@ internal class SupportStateUpdaterTest {
   }
 
   @Test
-  @Throws(ConfigNotFoundException::class, IOException::class)
   fun `updating support state for a custom source should be a no op`() {
     supportStateUpdater.updateSupportStatesForSourceDefinition(StandardSourceDefinition().withCustom(true))
     verify { mActorDefinitionService wasNot Called }
@@ -104,7 +99,6 @@ internal class SupportStateUpdaterTest {
   }
 
   @Test
-  @Throws(IOException::class, ConfigNotFoundException::class)
   fun `update support state for a destination`() {
     val v0MinorADV = createActorDefinitionVersion(V0_1_0)
     val v1MajorADV = createActorDefinitionVersion(V1_0_0)
@@ -136,7 +130,6 @@ internal class SupportStateUpdaterTest {
   }
 
   @Test
-  @Throws(IOException::class, ConfigNotFoundException::class)
   fun `update support state for a source`() {
     val v0MinorADV = createActorDefinitionVersion(V0_1_0)
     val v1MajorADV = createActorDefinitionVersion(V1_0_0)
@@ -168,12 +161,6 @@ internal class SupportStateUpdaterTest {
   }
 
   @Test
-  @Throws(
-    IOException::class,
-    JsonValidationException::class,
-    ConfigNotFoundException::class,
-    io.airbyte.config.persistence.ConfigNotFoundException::class,
-  )
   fun `update multiple support states`() {
     val sourceV0MinorADV = createActorDefinitionVersion(V0_1_0)
     val sourceV1MajorADV = createActorDefinitionVersion(V1_0_0)
@@ -335,7 +322,7 @@ internal class SupportStateUpdaterTest {
   fun `get support state update with no breaking changes`() {
     val referenceDate = LocalDate.parse("2023-01-01")
 
-    val breakingChanges: List<ActorDefinitionBreakingChange?> = listOf<ActorDefinitionBreakingChange>()
+    val breakingChanges: List<ActorDefinitionBreakingChange> = listOf<ActorDefinitionBreakingChange>()
 
     val v0MinorADV = createActorDefinitionVersion(V0_1_0)
     val v1MajorADV = createActorDefinitionVersion(V1_0_0)
@@ -366,12 +353,6 @@ internal class SupportStateUpdaterTest {
   }
 
   @Test
-  @Throws(
-    JsonValidationException::class,
-    ConfigNotFoundException::class,
-    IOException::class,
-    io.airbyte.config.persistence.ConfigNotFoundException::class,
-  )
   fun `build source notification data`() {
     val sourceDefinition =
       StandardSourceDefinition()
@@ -417,12 +398,6 @@ internal class SupportStateUpdaterTest {
   }
 
   @Test
-  @Throws(
-    JsonValidationException::class,
-    ConfigNotFoundException::class,
-    IOException::class,
-    io.airbyte.config.persistence.ConfigNotFoundException::class,
-  )
   fun `build destination notification data`() {
     val destinationDefinition =
       StandardDestinationDefinition()

@@ -12,13 +12,16 @@ micronaut:
     enabled: false
 
 airbyte:
-  workload-id: ${WORKLOAD_ID:}
-  connection-id: ${CONNECTION_ID:}
-  job-id: ${JOB_ID:}
-  attempt-id: ${ATTEMPT_ID:}
-  source-keyword: ${SOURCE_KEYWORD:source}
-  destination-keyword: ${DESTINATION_KEYWORD:destination}
-  orchestrator-keyword: ${ORCHESTRATOR_KEYWORD:orchestrator}
+  context:
+    attempt-id: ${ATTEMPT_ID:0}
+    connection-id: ${CONNECTION_ID:}
+    job-id: ${JOB_ID:0}
+    workload-id: ${WORKLOAD_ID:}
+  async-profiler:
+    source-keyword: ${SOURCE_KEYWORD:source}
+    destination-keyword: ${DESTINATION_KEYWORD:destination}
+    orchestrator-keyword: ${ORCHESTRATOR_KEYWORD:orchestrator}
+    profiling-mode: ${PROFILING_MODE:cpu}
   cloud:
     storage:
       type: ${STORAGE_TYPE}
@@ -30,7 +33,7 @@ airbyte:
         audit-logging: ${STORAGE_BUCKET_AUDIT_LOGGING}
         profiler-output: ${STORAGE_BUCKET_WORKLOAD_OUTPUT}
       azure:
-        connection-string: ${AZURE_STORAGE_CONNECTION_STRING}
+        connection-string: ${AZURE_STORAGE_CONNECTION_STRING:}
       gcs:
         application-credentials: ${GOOGLE_APPLICATION_CREDENTIALS:}
       minio:
@@ -41,6 +44,11 @@ airbyte:
         access-key: ${AWS_ACCESS_KEY_ID:}
         region: ${AWS_DEFAULT_REGION:}
         secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+
+endpoints:
+  all:
+    enabled: false
+    port: 8085
 #logger:
 #  levels:
 #    com.zaxxer.hikari: ERROR

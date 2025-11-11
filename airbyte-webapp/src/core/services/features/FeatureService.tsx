@@ -7,6 +7,7 @@ import { FeatureItem, FeatureSet } from "./types";
 interface FeatureServiceContext {
   features: FeatureItem[];
   setFeatureOverwrites: (features: FeatureItem[] | FeatureSet | undefined) => void;
+  setEntitlementOverwrites: (features: FeatureItem[] | FeatureSet | undefined) => void;
 }
 
 const featureServiceContext = React.createContext<FeatureServiceContext | null>(null);
@@ -32,14 +33,19 @@ interface FeatureServiceProps {
  * features is: overwrite > user > workspace > globally, i.e. if a feature is disabled for a user
  * it will take precedence over the feature being enabled globally or for that workspace.
  */
-const isCypress = window.hasOwnProperty("Cypress");
+// Allow E2E overrides in both Cypress and Playwright environments
+const isE2EEnvironment = window.hasOwnProperty("Cypress") || window.hasOwnProperty("_e2ePlaywrightEnvironment");
 export const FeatureService: React.FC<React.PropsWithChildren<FeatureServiceProps>> = ({
   features: defaultFeatures,
   instanceConfig,
   children,
 }) => {
-  const hasWindowOverwrites = isCypress && window.hasOwnProperty("_e2eFeatureOverwrites");
+  const hasWindowOverwrites = isE2EEnvironment && window.hasOwnProperty("_e2eFeatureOverwrites");
   const [overwrittenFeatures, setOverwrittenFeaturesState] = useState<FeatureSet>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hasWindowOverwrites ? (window as any)._e2eFeatureOverwrites : {}
+  );
+  const [overwrittenEntitlements, setOverwrittenEntitlementsState] = useState<FeatureSet>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hasWindowOverwrites ? (window as any)._e2eFeatureOverwrites : {}
   );
@@ -67,6 +73,7 @@ export const FeatureService: React.FC<React.PropsWithChildren<FeatureServiceProp
   const combinedFeatures = useMemo(() => {
     const combined: FeatureSet = {
       ...featureSetFromList(defaultFeatures),
+      ...overwrittenEntitlements,
       ...overwrittenFeatures,
       ...envOverwrites,
     };
@@ -75,18 +82,23 @@ export const FeatureService: React.FC<React.PropsWithChildren<FeatureServiceProp
       .filter(([, enabled]) => enabled)
       .map(([id]) => id) as FeatureItem[];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overwrittenFeatures, instanceConfig, ...defaultFeatures]);
+  }, [overwrittenFeatures, overwrittenEntitlements, instanceConfig, ...defaultFeatures]);
 
   const setFeatureOverwrites = useCallback((features: FeatureItem[] | FeatureSet | undefined = {}) => {
     setOverwrittenFeaturesState(Array.isArray(features) ? featureSetFromList(features) : features);
+  }, []);
+
+  const setEntitlementOverwrites = useCallback((features: FeatureItem[] | FeatureSet | undefined = {}) => {
+    setOverwrittenEntitlementsState(Array.isArray(features) ? featureSetFromList(features) : features);
   }, []);
 
   const serviceContext = useMemo(
     (): FeatureServiceContext => ({
       features: combinedFeatures,
       setFeatureOverwrites,
+      setEntitlementOverwrites,
     }),
-    [combinedFeatures, setFeatureOverwrites]
+    [combinedFeatures, setFeatureOverwrites, setEntitlementOverwrites]
   );
 
   return <featureServiceContext.Provider value={serviceContext}>{children}</featureServiceContext.Provider>;

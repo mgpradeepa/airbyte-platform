@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { FormattedMessage } from "react-intl";
 import { useLocation } from "react-router-dom";
 
@@ -10,14 +10,15 @@ import { ConnectionConfiguration } from "area/connector/types";
 import { useGetDestinationDefinitionSpecificationAsync } from "core/api";
 import { DestinationDefinitionRead } from "core/api/types/AirbyteClient";
 import { Connector } from "core/domain/connector";
-import { ConnectorCard } from "views/Connector/ConnectorCard";
+import { useExperiment } from "hooks/services/Experiment";
+import { ConnectorCard, NextConnectorCard } from "views/Connector/ConnectorCard";
 import { ConnectorCardValues } from "views/Connector/ConnectorForm";
 
 export interface DestinationFormValues {
   name: string;
   serviceType: string;
   destinationDefinitionId?: string;
-  connectionConfiguration?: ConnectionConfiguration;
+  connectionConfiguration: ConnectionConfiguration;
 }
 
 interface DestinationFormProps {
@@ -42,11 +43,12 @@ export const DestinationForm: React.FC<DestinationFormProps> = ({
   leftFooterSlot = null,
 }) => {
   const location = useLocation();
+  const useNextConnectorCard = useExperiment("connector.updatedSetupUx");
+  const CardComponent = useNextConnectorCard ? NextConnectorCard : ConnectorCard;
 
-  const [destinationDefinitionId, setDestinationDefinitionId] = useState(
+  const destinationDefinitionId =
     selectedDestinationDefinitionId ??
-      (hasDestinationDefinitionId(location.state) ? location.state.destinationDefinitionId : null)
-  );
+    (hasDestinationDefinitionId(location.state) ? location.state.destinationDefinitionId : null);
 
   const {
     data: destinationDefinitionSpecification,
@@ -58,10 +60,6 @@ export const DestinationForm: React.FC<DestinationFormProps> = ({
     () => destinationDefinitions.find((s) => Connector.id(s) === selectedDestinationDefinitionId),
     [destinationDefinitions, selectedDestinationDefinitionId]
   );
-
-  const onDropDownSelect = (destinationDefinitionId: string) => {
-    setDestinationDefinitionId(destinationDefinitionId);
-  };
 
   const onSubmitForm = async (values: ConnectorCardValues) =>
     onSubmit({
@@ -83,14 +81,13 @@ export const DestinationForm: React.FC<DestinationFormProps> = ({
   };
 
   return (
-    <ConnectorCard
+    <CardComponent
       formType="destination"
       headerBlock={<HeaderBlock />}
       description={<FormattedMessage id="destinations.description" />}
       isLoading={isLoading}
       fetchingConnectorError={destinationDefinitionError instanceof Error ? destinationDefinitionError : null}
       availableConnectorDefinitions={destinationDefinitions}
-      onConnectorDefinitionSelect={onDropDownSelect}
       selectedConnectorDefinitionSpecification={destinationDefinitionSpecification}
       selectedConnectorDefinitionId={destinationDefinitionId}
       onSubmit={onSubmitForm}

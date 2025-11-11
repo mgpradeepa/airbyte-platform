@@ -1,21 +1,33 @@
 import { useQueryClient } from "@tanstack/react-query";
-import React, { Suspense, useCallback, useEffect } from "react";
+import React, { Suspense, useCallback, useState } from "react";
 import { UseFormReturn } from "react-hook-form";
 import { useIntl } from "react-intl";
 import { useNavigate } from "react-router-dom";
 
 import { Form } from "components/forms";
 import LoadingSchema from "components/LoadingSchema";
+import { ExternalLink } from "components/ui/Link";
 import { ScrollParent } from "components/ui/ScrollParent";
 
 import { useGetDestinationFromSearchParams, useGetSourceFromSearchParams } from "area/connector/utils";
-import { connectionsKeys, HttpError, HttpProblem, useCreateConnection, useDiscoverSchema } from "core/api";
-import { ConnectionScheduleType } from "core/api/types/AirbyteClient";
+import {
+  connectionsKeys,
+  HttpError,
+  HttpProblem,
+  useCreateConnection,
+  useDestinationDefinitionVersion,
+  useDiscoverSchemaQuery,
+  useDiscoverSourceSchemaMutation,
+} from "core/api";
+import { AirbyteCatalog, ConnectionScheduleType } from "core/api/types/AirbyteClient";
+import { FormModeProvider, useFormMode } from "core/services/ui/FormModeContext";
+import { useCheckSubHourlySchedule } from "core/utils/checkSubHourlySchedule";
+import { useProFeaturesModal } from "core/utils/useProFeaturesModal";
 import {
   ConnectionFormServiceProvider,
   useConnectionFormService,
 } from "hooks/services/ConnectionForm/ConnectionFormService";
-import { useExperimentContext } from "hooks/services/Experiment";
+import { useExperiment, useExperimentContext } from "hooks/services/Experiment";
 import { useFormChangeTrackerService } from "hooks/services/FormChangeTracker";
 import { useNotificationService } from "hooks/services/Notification";
 
@@ -23,12 +35,8 @@ import styles from "./CreateConnectionForm.module.scss";
 import { SchemaError } from "./SchemaError";
 import { SimplifiedConnectionConfiguration } from "./SimplifiedConnectionCreation/SimplifiedConnectionConfiguration";
 import { I18N_KEY_UNDER_ONE_HOUR_NOT_ALLOWED } from "./SimplifiedConnectionCreation/SimplifiedConnectionScheduleFormField";
-import { useAnalyticsTrackFunctions } from "./useAnalyticsTrackFunctions";
-import {
-  FormConnectionFormValues,
-  useConnectionValidationSchema,
-  useInitialFormValues,
-} from "../ConnectionForm/formConfig";
+import { FormConnectionFormValues, useInitialFormValues } from "../ConnectionForm/formConfig";
+import { useConnectionValidationZodSchema } from "../ConnectionForm/schemas/connectionSchema";
 
 export const CREATE_CONNECTION_FORM_ID = "create-connection-form";
 
@@ -36,18 +44,33 @@ const CreateConnectionFormInner: React.FC = () => {
   const navigate = useNavigate();
   const { clearAllFormChanges } = useFormChangeTrackerService();
   const { mutateAsync: createConnection } = useCreateConnection();
-  const { connection, mode, setSubmitError } = useConnectionFormService();
-  const initialValues = useInitialFormValues(connection, mode);
-  const { registerNotification } = useNotificationService();
+  const { connection, setSubmitError } = useConnectionFormService();
+  const { mode } = useFormMode();
+  const destinationDefinitionVersion = useDestinationDefinitionVersion(connection.destination.destinationId);
+  const initialValues = useInitialFormValues(connection, mode, destinationDefinitionVersion.supportsFileTransfer);
+  const { registerNotification, unregisterNotificationById } = useNotificationService();
   const { formatMessage } = useIntl();
   useExperimentContext("source-definition", connection.source?.sourceDefinitionId);
   const queryClient = useQueryClient();
+  const checkSubHourlySchedule = useCheckSubHourlySchedule();
+  const { showProFeatureModalIfNeeded } = useProFeaturesModal("sub-hourly-sync");
 
-  const validationSchema = useConnectionValidationSchema();
+  const zodValidationSchema = useConnectionValidationZodSchema();
 
   const onSubmit = useCallback(
     async ({ ...restFormValues }: FormConnectionFormValues) => {
       try {
+        // Check for sub-hourly schedule and show modal if needed
+        const isSubHourly = await checkSubHourlySchedule({
+          scheduleType: restFormValues.scheduleType,
+          scheduleData: restFormValues.scheduleData,
+        });
+
+        if (isSubHourly) {
+          await showProFeatureModalIfNeeded();
+        }
+
+        // Proceed with connection creation
         const createdConnection = await createConnection({
           values: {
             ...restFormValues,
@@ -81,7 +104,12 @@ const CreateConnectionFormInner: React.FC = () => {
           }, 2000);
         }
       } catch (error) {
-        setSubmitError(error);
+        if (
+          !(error instanceof HttpError && HttpProblem.isType(error, "error:connection-conflicting-destination-stream"))
+        ) {
+          setSubmitError(error);
+        }
+
         // Needs to be re-thrown so react-hook-form can handle the error. We should probably get rid of setSubmitError
         // entirely and just use react-hook-form to handle errors.
         throw error;
@@ -98,6 +126,8 @@ const CreateConnectionFormInner: React.FC = () => {
       registerNotification,
       formatMessage,
       queryClient,
+      checkSubHourlySchedule,
+      showProFeatureModalIfNeeded,
     ]
   );
 
@@ -108,8 +138,36 @@ const CreateConnectionFormInner: React.FC = () => {
           message: I18N_KEY_UNDER_ONE_HOUR_NOT_ALLOWED,
         });
       }
+      if (error instanceof HttpError && HttpProblem.isType(error, "error:connection-conflicting-destination-stream")) {
+        registerNotification({
+          id: "connection.conflictingDestinationStream",
+          text: formatMessage(
+            {
+              id: "connectionForm.conflictingDestinationStream",
+            },
+            {
+              stream: error.response?.data?.streams?.[0]?.streamName,
+              moreCount:
+                (error.response?.data?.streams?.length ?? 0) > 1 ? (error.response?.data?.streams?.length ?? 1) - 1 : 0,
+              lnk: (...lnk: React.ReactNode[]) => (
+                <ExternalLink href={error.response.documentationUrl ?? ""}>{lnk}</ExternalLink>
+              ),
+            }
+          ),
+          actionBtnText: formatMessage({ id: "connectionForm.conflictingDestinationStream.action" }),
+          onAction: () => {
+            // Generate a random 6-character string with underscore suffix
+            const randomPrefix = `${Math.random().toString(36).substring(2, 8)}_`;
+            // Update the form values with the new prefix and resubmit
+            methods.setValue("prefix", randomPrefix);
+            unregisterNotificationById("connection.conflictingDestinationStream");
+            methods.handleSubmit(onSubmit)();
+          },
+          type: "error",
+        });
+      }
     },
-    []
+    [formatMessage, onSubmit, registerNotification, unregisterNotificationById]
   );
 
   return (
@@ -117,7 +175,7 @@ const CreateConnectionFormInner: React.FC = () => {
       <Suspense fallback={<LoadingSchema />}>
         <Form<FormConnectionFormValues>
           defaultValues={initialValues}
-          schema={validationSchema}
+          zodSchema={zodValidationSchema}
           onSubmit={onSubmit}
           onError={onError}
           trackDirtyChanges
@@ -135,25 +193,29 @@ const CreateConnectionFormInner: React.FC = () => {
 export const CreateConnectionForm: React.FC = () => {
   const source = useGetSourceFromSearchParams();
   const destination = useGetDestinationFromSearchParams();
-  const { trackFailure } = useAnalyticsTrackFunctions();
+  const asyncSchemaDiscoveryEnabled = useExperiment("asyncSchemaDiscovery");
 
-  const { schema, isLoading, schemaErrorStatus, catalogId, onDiscoverSchema } = useDiscoverSchema(
-    source.sourceId,
-    true
-  );
+  const { data, error, isFetching, refetch } = useDiscoverSchemaQuery(source, { useErrorBoundary: false });
+  const { mutateAsync: discoverSchemaMutation, isLoading: isMutationLoading } = useDiscoverSourceSchemaMutation(source);
+  const [refreshedSchema, setRefreshedSchema] = useState<{ catalog: AirbyteCatalog; catalogId: string } | null>(null);
 
-  useEffect(() => {
-    if (schemaErrorStatus) {
-      trackFailure(source, destination, schemaErrorStatus);
+  const schema = refreshedSchema?.catalog ?? data?.catalog;
+  const catalogId = refreshedSchema?.catalogId ?? data?.catalogId;
+  const isLoading = isFetching || isMutationLoading;
+
+  const refreshSchema = useCallback(async () => {
+    if (asyncSchemaDiscoveryEnabled) {
+      const result = await discoverSchemaMutation();
+      setRefreshedSchema({ catalog: result.catalog, catalogId: result.catalogId });
+    } else {
+      await refetch();
     }
-    // we need to track the schemaErrorStatus changes only
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schemaErrorStatus]);
+  }, [asyncSchemaDiscoveryEnabled, discoverSchemaMutation, refetch]);
 
-  if (schemaErrorStatus) {
+  if (error && error instanceof Error) {
     return (
       <ScrollParent>
-        <SchemaError schemaError={schemaErrorStatus} refreshSchema={onDiscoverSchema} />
+        <SchemaError schemaError={error} refreshSchema={refreshSchema} />
       </ScrollParent>
     );
   }
@@ -169,13 +231,14 @@ export const CreateConnectionForm: React.FC = () => {
   };
 
   return (
-    <ConnectionFormServiceProvider
-      connection={partialConnection}
-      mode="create"
-      refreshSchema={onDiscoverSchema}
-      schemaError={schemaErrorStatus}
-    >
-      {isLoading ? <LoadingSchema /> : <CreateConnectionFormInner />}
-    </ConnectionFormServiceProvider>
+    <FormModeProvider mode="create">
+      <ConnectionFormServiceProvider
+        connection={partialConnection}
+        refreshSchema={refreshSchema}
+        schemaError={error instanceof Error ? error : null}
+      >
+        {isLoading ? <LoadingSchema /> : <CreateConnectionFormInner key={catalogId} />}
+      </ConnectionFormServiceProvider>
+    </FormModeProvider>
   );
 };

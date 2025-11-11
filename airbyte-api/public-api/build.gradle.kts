@@ -5,7 +5,6 @@ plugins {
 }
 
 dependencies {
-  annotationProcessor(libs.micronaut.openapi)
 
   ksp(libs.micronaut.openapi)
   ksp(platform(libs.micronaut.platform))
@@ -47,13 +46,13 @@ val genPublicApiServer =
   tasks.register<GenerateTask>("generatePublicApiServer") {
     val serverOutputDir = "${getLayout().buildDirectory.get()}/generated/public_api/server"
 
-    inputs.file(internalApiSpecFile)
+    inputs.file(internalApiSpecFile).withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.dir(serverOutputDir)
 
     generatorName = "kotlin-server"
     inputSpec = internalApiSpecFile
     outputDir = serverOutputDir
-    templateDir = "$projectDir/src/main/resources/templates/kotlin-server/public-api"
+    templateDir.set("$projectDir/src/main/resources/templates/kotlin-server/public-api")
 
     packageName = "io.airbyte.publicApi.server.generated"
 
@@ -119,11 +118,4 @@ afterEvaluate {
   tasks.named("kspKotlin").configure {
     mustRunAfter(genPublicApiServer)
   }
-}
-
-// Even though Kotlin is excluded on Spotbugs, this project
-// still runs into spotbug issues. Working theory is that
-// generated code is being picked up. Disable as a short-term fix.
-tasks.named("spotbugsMain") {
-  enabled = false
 }

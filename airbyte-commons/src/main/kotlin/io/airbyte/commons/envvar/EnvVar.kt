@@ -12,9 +12,9 @@ package io.airbyte.commons.envvar
  * These are defined in alphabetical order for findability/readability reasons.
  */
 enum class EnvVar {
-  AIRBYTE_ALLOW_CUSTOM_CODE,
   AIRBYTE_EDITION,
-  AIRBYTE_ROLE,
+  AIRBYTE_ENABLE_UNSAFE_CODE,
+  AIRBYTE_URL,
   AIRBYTE_VERSION,
   ATTEMPT_ID,
   AWS_ACCESS_KEY_ID,
@@ -37,6 +37,7 @@ enum class EnvVar {
   DD_AGENT_HOST,
   DD_CONSTANT_TAGS,
   DD_DOGSTATSD_PORT,
+  DD_REMOTE_CONFIGURATION_ENABLED,
   DD_SERVICE,
   DD_VERSION,
   DEPLOYMENT_ENV,
@@ -101,6 +102,7 @@ enum class EnvVar {
    */
   STORAGE_BUCKET_AUDIT_LOGGING,
   STORAGE_BUCKET_LOG,
+  STORAGE_BUCKET_REPLICATION_DUMP,
   STORAGE_BUCKET_STATE,
   STORAGE_BUCKET_WORKLOAD_OUTPUT,
   STORAGE_TYPE,
@@ -113,6 +115,7 @@ enum class EnvVar {
   WORKER_ENVIRONMENT,
   WORKLOAD_ID,
   WORKSPACE_DOCKER_MOUNT,
+  WORKSPACE_ID,
   WORKSPACE_ROOT,
 
   /** These exist testing purposes only! DO NOT USE in non-test code! */

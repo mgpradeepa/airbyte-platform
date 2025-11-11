@@ -10,7 +10,9 @@ import io.airbyte.featureflag.ANONYMOUS
 import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.featureflag.RunDeclarativeSourcesUpdater
 import io.airbyte.featureflag.Workspace
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
+
+private val log = KotlinLogging.logger {}
 
 /**
  * Helper class used to apply updates to source-declarative-manifest actor definition versions when
@@ -26,12 +28,11 @@ class DeclarativeSourceUpdater(
   private val featureFlagClient: FeatureFlagClient,
 ) {
   companion object {
-    private val log = LoggerFactory.getLogger(DeclarativeSourceUpdater::class.java)
   }
 
   fun apply() {
     if (!featureFlagClient.boolVariation(RunDeclarativeSourcesUpdater, Workspace(ANONYMOUS))) {
-      log.info("Declarative sources update feature flag is disabled. Skipping updating declarative sources.")
+      log.info { "Declarative sources update feature flag is disabled. Skipping updating declarative sources." }
       return
     }
 
@@ -55,21 +56,19 @@ class DeclarativeSourceUpdater(
         declarativeManifestImageVersionService.writeDeclarativeManifestImageVersion(newVersion)
         val previousVersion = currentDeclarativeManifestImageVersions.find { it.majorVersion == newVersion.majorVersion }
         if (previousVersion == null) {
-          log.info(
-            "Persisted new declarative manifest image version for new major version ${newVersion.majorVersion}: ${newVersion.imageVersion}" +
-              " with sha ${newVersion.imageSha}",
-          )
+          log.info {
+            "Persisted new declarative manifest image version for new major version ${newVersion.majorVersion}: ${newVersion.imageVersion} with sha ${newVersion.imageSha}"
+          }
         } else if (previousVersion.imageVersion == newVersion.imageVersion) {
-          log.info(
-            "Updated sha for declarative manifest image version ${newVersion.imageVersion} from ${previousVersion.imageSha} to ${newVersion.imageSha}",
-          )
+          log.info {
+            "Updated sha for declarative manifest image version ${newVersion.imageVersion} from ${previousVersion.imageSha} to ${newVersion.imageSha}"
+          }
         } else {
-          log.info(
-            "Updated declarative manifest image version for major ${newVersion.majorVersion}" +
-              " from ${previousVersion.imageVersion} to ${newVersion.imageVersion}, with sha ${newVersion.imageSha}",
-          )
+          log.info {
+            "Updated declarative manifest image version for major ${newVersion.majorVersion} from ${previousVersion.imageVersion} to ${newVersion.imageVersion}, with sha ${newVersion.imageSha}"
+          }
           val numUpdated = actorDefinitionService.updateDeclarativeActorDefinitionVersions(previousVersion.imageVersion, newVersion.imageVersion)
-          log.info("Updated $numUpdated declarative actor definitions from ${previousVersion.imageVersion} to ${newVersion.imageVersion}")
+          log.info { "Updated $numUpdated declarative actor definitions from ${previousVersion.imageVersion} to ${newVersion.imageVersion}" }
         }
       }
   }

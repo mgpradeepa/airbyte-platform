@@ -2,8 +2,11 @@ import React, { useMemo } from "react";
 import { createSearchParams, Navigate, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { useEffectOnce } from "react-use";
 
-import { EnterpriseSourcePage } from "components/source/enterpriseStubs/EnterpriseSourcePage";
+import { EnterpriseStubConnectorPage } from "components/EnterpriseStubConnectorPage/EnterpriseStubConnectorPage";
 
+import MainLayout from "area/layout/MainLayout";
+import { UserSettingsRoutes } from "area/settings/UserSettingsRoutes";
+import { useCurrentWorkspaceId } from "area/workspace/utils";
 import {
   useGetInstanceConfiguration,
   useInvalidateAllWorkspaceScopeOnChange,
@@ -13,25 +16,26 @@ import { DefaultErrorBoundary } from "core/errors";
 import { useAnalyticsIdentifyUser, useAnalyticsRegisterValues } from "core/services/analytics";
 import { useAuthService } from "core/services/auth";
 import { FeatureItem, useFeature } from "core/services/features";
-import { useIntent } from "core/utils/rbac/intent";
+import { Intent, useGeneratedIntent } from "core/utils/rbac";
 import { useEnterpriseLicenseCheck } from "core/utils/useEnterpriseLicenseCheck";
 import { storeUtmFromQuery } from "core/utils/utmStorage";
+import { useExperiment } from "hooks/services/Experiment";
 import { useApiHealthPoll } from "hooks/services/Health";
 import { useBuildUpdateCheck } from "hooks/services/useBuildUpdateCheck";
 import { useCurrentWorkspace } from "hooks/services/useWorkspace";
 import { useQuery } from "hooks/useQuery";
-import { ApplicationSettingsView } from "packages/cloud/views/users/ApplicationSettingsView/ApplicationSettingsView";
 import { LoginPage } from "pages/login/LoginPage";
 import MainView from "views/layout/MainView";
 
+import { EmbeddedSourceCreatePage } from "./embedded/EmbeddedSourceCreatePage/EmbeddedSourcePage";
+import { OnboardingPage } from "./OnboardingPage/OnboardingPage";
+import { OrganizationRoutes } from "./organization/OrganizationRoutes";
 import { RoutePaths, DestinationPaths, SourcePaths, SettingsRoutePaths } from "./routePaths";
 import { AccountPage } from "./SettingsPage/pages/AccountPage";
 import { DestinationsPage, SourcesPage } from "./SettingsPage/pages/ConnectorsPage";
 import { LicenseSettingsPage } from "./SettingsPage/pages/LicenseDetailsPage/LicenseSettingsPage";
 import { MetricsPage } from "./SettingsPage/pages/MetricsPage";
 import { NotificationPage } from "./SettingsPage/pages/NotificationPage";
-import { GeneralOrganizationSettingsPage } from "./SettingsPage/pages/Organization/GeneralOrganizationSettingsPage";
-import { OrganizationMembersPage } from "./SettingsPage/pages/Organization/OrganizationMembersPage";
 import { GeneralWorkspaceSettingsPage } from "./SettingsPage/Workspace/GeneralWorkspaceSettingsPage";
 import { WorkspaceMembersPage } from "./SettingsPage/Workspace/WorkspaceMembersPage";
 import { WorkspaceRead } from "../core/api/types/AirbyteClient";
@@ -55,8 +59,6 @@ const SourceSettingsPage = React.lazy(() => import("./source/SourceSettingsPage"
 const SourceConnectionsPage = React.lazy(() => import("./source/SourceConnectionsPage"));
 const AdvancedSettingsPage = React.lazy(() => import("./SettingsPage/pages/AdvancedSettingsPage"));
 
-const WorkspacesPage = React.lazy(() => import("./workspaces"));
-
 const useAddAnalyticsContextForWorkspace = (workspace: WorkspaceRead): void => {
   const analyticsContext = useMemo(
     () => ({
@@ -66,81 +68,80 @@ const useAddAnalyticsContextForWorkspace = (workspace: WorkspaceRead): void => {
     [workspace.workspaceId, workspace.customerId]
   );
   useAnalyticsRegisterValues(analyticsContext);
-  useAnalyticsIdentifyUser(workspace.workspaceId, {
-    protocol: window.location.protocol,
-    isLocalhost: window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1",
-  });
+  const userTraits = useMemo(
+    () => ({
+      protocol: window.location.protocol,
+      isLocalhost: window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1",
+    }),
+    []
+  );
+  useAnalyticsIdentifyUser(workspace.workspaceId, userTraits);
 };
 
-const MainViewRoutes: React.FC = () => {
-  const { organizationId, workspaceId } = useCurrentWorkspace();
-  const multiWorkspaceUI = useFeature(FeatureItem.MultiWorkspaceUI);
-  const { applicationSupport } = useAuthService();
+const WorkspacesRoutes: React.FC = () => {
+  const workspace = useCurrentWorkspace();
+  useAddAnalyticsContextForWorkspace(workspace);
+
+  const { authType } = useAuthService();
   const licenseSettings = useFeature(FeatureItem.EnterpriseLicenseChecking);
-  const isAccessManagementEnabled = useFeature(FeatureItem.RBAC);
-  const displayOrganizationUsers = useFeature(FeatureItem.DisplayOrganizationUsers);
-  const canViewWorkspaceSettings = useIntent("ViewWorkspaceSettings", { workspaceId });
-  const canViewOrganizationSettings = useIntent("ViewOrganizationSettings", { organizationId });
+  const canViewWorkspaceSettings = useGeneratedIntent(Intent.ViewWorkspaceSettings);
 
   return (
-    <MainView>
-      <DefaultErrorBoundary>
-        <Routes>
-          <Route path={RoutePaths.Destination}>
-            <Route index element={<AllDestinationsPage />} />
-            <Route path={DestinationPaths.SelectDestinationNew} element={<SelectDestinationPage />} />
-            <Route path={DestinationPaths.DestinationNew} element={<CreateDestinationPage />} />
-            <Route path={DestinationPaths.Root} element={<DestinationItemPage />}>
-              <Route index element={<DestinationSettingsPage />} />
-              <Route path={DestinationPaths.Connections} element={<DestinationConnectionsPage />} />
-            </Route>
+    <DefaultErrorBoundary>
+      <Routes>
+        <Route path={RoutePaths.Destination}>
+          <Route index element={<AllDestinationsPage />} />
+          <Route path={DestinationPaths.SelectDestinationNew} element={<SelectDestinationPage />} />
+          <Route path={DestinationPaths.DestinationNew} element={<CreateDestinationPage />} />
+          <Route
+            path={`${DestinationPaths.EnterpriseDestination}/:id`}
+            element={<EnterpriseStubConnectorPage connectorType="destination" />}
+          />
+          <Route path={DestinationPaths.Root} element={<DestinationItemPage />}>
+            <Route index element={<DestinationSettingsPage />} />
+            <Route path={DestinationPaths.Connections} element={<DestinationConnectionsPage />} />
           </Route>
-          <Route path={RoutePaths.Source}>
-            <Route index element={<AllSourcesPage />} />
-            <Route path={SourcePaths.SelectSourceNew} element={<SelectSourcePage />} />
-            <Route path={SourcePaths.SourceNew} element={<CreateSourcePage />} />
-            <Route path={SourcePaths.EnterpriseSource} element={<EnterpriseSourcePage />} />
-            <Route path={SourcePaths.Root} element={<SourceItemPage />}>
-              <Route index element={<SourceSettingsPage />} />
-              <Route path={SourcePaths.Connections} element={<SourceConnectionsPage />} />
-            </Route>
+        </Route>
+        <Route path={RoutePaths.Source}>
+          <Route index element={<AllSourcesPage />} />
+          <Route path={SourcePaths.SelectSourceNew} element={<SelectSourcePage />} />
+          <Route path={SourcePaths.SourceNew} element={<CreateSourcePage />} />
+          <Route
+            path={`${SourcePaths.EnterpriseSource}/:id`}
+            element={<EnterpriseStubConnectorPage connectorType="source" />}
+          />
+          <Route path={SourcePaths.Root} element={<SourceItemPage />}>
+            <Route index element={<SourceSettingsPage />} />
+            <Route path={SourcePaths.Connections} element={<SourceConnectionsPage />} />
           </Route>
-          <Route path={`${RoutePaths.Connections}/*`} element={<ConnectionsRoutes />} />
-          <Route path={`${RoutePaths.Settings}/*`} element={<SettingsPage />}>
-            <Route path={SettingsRoutePaths.Account} element={<AccountPage />} />
-            {applicationSupport !== "none" && (
-              <Route path={SettingsRoutePaths.Applications} element={<ApplicationSettingsView />} />
-            )}
-            <Route path={SettingsRoutePaths.Workspace} element={<GeneralWorkspaceSettingsPage />} />
-            {canViewWorkspaceSettings && multiWorkspaceUI ? (
-              <Route path={SettingsRoutePaths.WorkspaceMembers} element={<WorkspaceMembersPage />} />
-            ) : null}
-            {canViewWorkspaceSettings && (
-              <>
-                <Route path={SettingsRoutePaths.Source} element={<SourcesPage />} />
-                <Route path={SettingsRoutePaths.Destination} element={<DestinationsPage />} />
-              </>
-            )}
-            <Route path={SettingsRoutePaths.Notifications} element={<NotificationPage />} />
-            <Route path={SettingsRoutePaths.Metrics} element={<MetricsPage />} />
-            {multiWorkspaceUI && canViewOrganizationSettings && (
-              <>
-                <Route path={SettingsRoutePaths.Organization} element={<GeneralOrganizationSettingsPage />} />
-                {isAccessManagementEnabled && displayOrganizationUsers && (
-                  <Route path={SettingsRoutePaths.OrganizationMembers} element={<OrganizationMembersPage />} />
-                )}
-              </>
-            )}
-            {licenseSettings && <Route path={SettingsRoutePaths.License} element={<LicenseSettingsPage />} />}
-            <Route path={SettingsRoutePaths.Advanced} element={<AdvancedSettingsPage />} />
-            <Route path="*" element={<Navigate to={SettingsRoutePaths.Account} replace />} />
-          </Route>
-          <Route path={`${RoutePaths.ConnectorBuilder}/*`} element={<ConnectorBuilderRoutes />} />
+        </Route>
+        <Route path={`${RoutePaths.Connections}/*`} element={<ConnectionsRoutes />} />
+        <Route path="onboarding" element={<OnboardingPage />} />
+        <Route path={`${RoutePaths.Settings}/*`} element={<SettingsPage />}>
+          {/* If auth is disabled, there will be no `/user` routes, but we want the account page to still be accessible within the workspace settings */}
+          {authType === "none" && <Route path={SettingsRoutePaths.Account} element={<AccountPage />} />}
+          <Route path={SettingsRoutePaths.Workspace} element={<GeneralWorkspaceSettingsPage />} />
+          {canViewWorkspaceSettings ? (
+            <Route path={SettingsRoutePaths.WorkspaceMembers} element={<WorkspaceMembersPage />} />
+          ) : null}
+          {canViewWorkspaceSettings && (
+            <>
+              <Route path={SettingsRoutePaths.Source} element={<SourcesPage />} />
+              <Route path={SettingsRoutePaths.Destination} element={<DestinationsPage />} />
+            </>
+          )}
+          <Route path={SettingsRoutePaths.Notifications} element={<NotificationPage />} />
+          <Route path={SettingsRoutePaths.Metrics} element={<MetricsPage />} />
 
-          <Route path="*" element={<Navigate to={RoutePaths.Connections} />} />
-        </Routes>
-      </DefaultErrorBoundary>
-    </MainView>
+          {licenseSettings && <Route path={SettingsRoutePaths.License} element={<LicenseSettingsPage />} />}
+          <Route path={SettingsRoutePaths.Advanced} element={<AdvancedSettingsPage />} />
+          <Route path="*" element={<Navigate to={SettingsRoutePaths.Workspace} replace />} />
+        </Route>
+        <Route path={`${RoutePaths.ConnectorBuilder}/*`} element={<ConnectorBuilderRoutes />} />
+        {authType !== "none" && <Route path={`${SettingsRoutePaths.User}/*`} element={<UserSettingsRoutes />} />}
+        <Route path="*" element={<Navigate to={RoutePaths.Connections} />} />
+      </Routes>
+    </DefaultErrorBoundary>
   );
 };
 
@@ -173,23 +174,16 @@ export const AutoSelectFirstWorkspace: React.FC = () => {
   );
 };
 
-const RoutingWithWorkspace: React.FC<{ element?: JSX.Element }> = ({ element }) => {
-  const workspace = useCurrentWorkspace();
-
-  useAddAnalyticsContextForWorkspace(workspace);
-  useApiHealthPoll();
-
-  // invalidate everything in the workspace scope when the workspaceId changes
-  useInvalidateAllWorkspaceScopeOnChange(workspace.workspaceId);
-
-  return element ?? <MainViewRoutes />;
-};
-
 export const Routing: React.FC = () => {
   const { pathname: originalPathname, search, hash } = useLocation();
   const { inited, loggedOut } = useAuthService();
   const { initialSetupComplete } = useGetInstanceConfiguration();
   useBuildUpdateCheck();
+  useApiHealthPoll();
+
+  // invalidate everything in the workspace scope when the workspaceId changes
+  const workspaceId = useCurrentWorkspaceId();
+  useInvalidateAllWorkspaceScopeOnChange(workspaceId);
 
   useEffectOnce(() => {
     storeUtmFromQuery(search);
@@ -227,9 +221,10 @@ export const Routing: React.FC = () => {
 
 const AuthenticatedRoutes = () => {
   const { loginRedirect } = useQuery<{ loginRedirect: string }>();
-  const multiWorkspaceUI = useFeature(FeatureItem.MultiWorkspaceUI);
   const { initialSetupComplete } = useGetInstanceConfiguration();
   useEnterpriseLicenseCheck();
+  const isOrgPickerEnabled = useExperiment("sidebar.showOrgPickerV2");
+  const showOrganizationUI = useFeature(FeatureItem.OrganizationUI);
 
   if (loginRedirect) {
     return <Navigate to={loginRedirect} replace />;
@@ -237,13 +232,23 @@ const AuthenticatedRoutes = () => {
 
   return (
     <Routes>
+      <Route path={`/${RoutePaths.EmbeddedWidget}`} element={<EmbeddedSourceCreatePage />} />
       {!initialSetupComplete ? (
         <Route path="*" element={<PreferencesRoutes />} />
+      ) : isOrgPickerEnabled ? (
+        <Route element={<MainLayout />}>
+          {showOrganizationUI && (
+            <Route path={`${RoutePaths.Organization}/:organizationId/*`} element={<OrganizationRoutes />} />
+          )}
+          <Route path={`${RoutePaths.Workspaces}/:workspaceId/*`} element={<WorkspacesRoutes />} />
+          <Route path="*" element={<DefaultView />} />
+        </Route>
       ) : (
         <>
-          {multiWorkspaceUI && <Route path={RoutePaths.Workspaces} element={<WorkspacesPage />} />}
           <Route path="/" element={<DefaultView />} />
-          <Route path={`${RoutePaths.Workspaces}/:workspaceId/*`} element={<RoutingWithWorkspace />} />
+          <Route element={<MainView />}>
+            <Route path={`${RoutePaths.Workspaces}/:workspaceId/*`} element={<WorkspacesRoutes />} />
+          </Route>
           <Route path="*" element={<AutoSelectFirstWorkspace />} />
         </>
       )}

@@ -8,32 +8,32 @@ import io.airbyte.api.problems.throwable.generated.StateConflictProblem
 import io.airbyte.api.problems.throwable.generated.TryAgainLaterConflictProblem
 import io.airbyte.commons.server.errors.ValueConflictKnownException
 import io.airbyte.commons.server.handlers.SchedulerHandler
-import io.airbyte.data.services.ApplicationService
+import io.airbyte.micronaut.runtime.AirbyteApiConfig
 import io.airbyte.server.apis.publicapi.errorHandlers.JOB_NOT_RUNNING_MESSAGE
-import io.micronaut.test.annotation.MockBean
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest
 import io.mockk.every
 import io.mockk.mockk
-import jakarta.inject.Inject
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.util.UUID
 
-@MicronautTest
 class JobServiceTest {
-  @Inject
   private lateinit var jobService: JobServiceImpl
+  private val schedulerHandler: SchedulerHandler = mockk()
 
   private val connectionId = UUID.randomUUID()
 
-  @Inject
-  lateinit var schedulerHandler: SchedulerHandler
-
-  @MockBean(SchedulerHandler::class)
-  fun schedulerHandler(): SchedulerHandler = mockk()
-
-  @MockBean(ApplicationService::class)
-  fun applicationService(): ApplicationService = mockk<ApplicationService>()
+  @BeforeEach
+  fun setUp() {
+    jobService =
+      JobServiceImpl(
+        schedulerHandler = schedulerHandler,
+        jobHistoryHandler = mockk(),
+        currentUserService = mockk(),
+        userService = mockk(),
+        airbyteApiConfig = AirbyteApiConfig(),
+      )
+  }
 
   @Test
   fun `test sync already running value conflict known exception`() {

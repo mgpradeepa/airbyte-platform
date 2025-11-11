@@ -6,24 +6,28 @@ package io.airbyte.initContainer.input
 
 import io.airbyte.commons.json.Jsons
 import io.airbyte.commons.protocol.ProtocolSerializer
+import io.airbyte.commons.protocol.SerializationTarget
 import io.airbyte.config.AirbyteStream
 import io.airbyte.config.ConfiguredAirbyteCatalog
 import io.airbyte.config.ConfiguredAirbyteStream
 import io.airbyte.config.State
 import io.airbyte.config.SyncMode
+import io.airbyte.config.WorkloadType
+import io.airbyte.initContainer.InputFetcherTest
+import io.airbyte.initContainer.serde.ObjectSerializer
 import io.airbyte.initContainer.system.FileClient
 import io.airbyte.mappers.transformations.DestinationCatalogGenerator
 import io.airbyte.metrics.MetricClient
+import io.airbyte.micronaut.runtime.AirbyteContainerOrchestratorConfig
 import io.airbyte.persistence.job.models.IntegrationLauncherConfig
 import io.airbyte.persistence.job.models.ReplicationInput
 import io.airbyte.workers.ReplicationInputHydrator
 import io.airbyte.workers.internal.NamespacingMapper
+import io.airbyte.workers.models.ArchitectureConstants
 import io.airbyte.workers.models.ReplicationActivityInput
 import io.airbyte.workers.pod.FileConstants
-import io.airbyte.workers.serde.ObjectSerializer
 import io.airbyte.workers.serde.PayloadDeserializer
-import io.airbyte.workload.api.client.model.generated.Workload
-import io.airbyte.workload.api.client.model.generated.WorkloadType
+import io.airbyte.workload.api.domain.Workload
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
 import io.mockk.junit5.MockKExtension
@@ -34,10 +38,9 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
 import java.util.UUID
-import java.util.stream.Stream
 
 @ExtendWith(MockKExtension::class)
-class ReplicationHydrationProcessorTest {
+internal class ReplicationHydrationProcessorTest {
   @MockK
   lateinit var replicationInputHydrator: ReplicationInputHydrator
 
@@ -72,6 +75,7 @@ class ReplicationHydrationProcessorTest {
         fileClient,
         destinationCatalogGenerator,
         metricClient,
+        AirbyteContainerOrchestratorConfig(platformMode = ArchitectureConstants.ORCHESTRATOR),
       )
   }
 
@@ -125,8 +129,10 @@ class ReplicationHydrationProcessorTest {
     every { serializer.serialize(hydrated.sourceConfiguration) } returns serializedSrcConfig
     every { serializer.serialize(hydrated.destinationConfiguration) } returns serializedDestConfig
     every { serializer.serialize(hydrated.state?.state) } returns serializedState
-    every { protocolSerializer.serialize(hydrated.catalog, false) } returns serializedSrcCatalog
-    every { protocolSerializer.serialize(mapper.mapCatalog(hydrated.catalog), hydrated.destinationSupportsRefreshes) } returns serializedDestCatalog
+    every { protocolSerializer.serialize(hydrated.catalog, false, SerializationTarget.SOURCE) } returns serializedSrcCatalog
+    every {
+      protocolSerializer.serialize(mapper.mapCatalog(hydrated.catalog), hydrated.destinationSupportsRefreshes, SerializationTarget.DESTINATION)
+    } returns serializedDestCatalog
     every {
       destinationCatalogGenerator.generateDestinationCatalog(any())
     } returns DestinationCatalogGenerator.CatalogGenerationResult(hydrated.catalog, mapOf())
@@ -139,8 +145,14 @@ class ReplicationHydrationProcessorTest {
     verify { fileClient.writeInputFile(FileConstants.INIT_INPUT_FILE, serializedReplInput) }
     verify { serializer.serialize(hydrated.sourceConfiguration) }
     verify { serializer.serialize(hydrated.destinationConfiguration) }
-    verify { protocolSerializer.serialize(hydrated.catalog, false) }
-    verify { protocolSerializer.serialize(mapper.mapCatalog(hydrated.catalog), hydrated.destinationSupportsRefreshes) }
+    verify { protocolSerializer.serialize(hydrated.catalog, false, SerializationTarget.SOURCE) }
+    verify {
+      protocolSerializer.serialize(
+        mapper.mapCatalog(hydrated.catalog),
+        hydrated.destinationSupportsRefreshes,
+        SerializationTarget.DESTINATION,
+      )
+    }
     verify { fileClient.writeInputFile(FileConstants.CATALOG_FILE, serializedSrcCatalog, FileConstants.SOURCE_DIR) }
     verify { fileClient.writeInputFile(FileConstants.CONNECTOR_CONFIG_FILE, serializedSrcConfig, FileConstants.SOURCE_DIR) }
     verify(exactly = timesStateFileWritten) { fileClient.writeInputFile(FileConstants.INPUT_STATE_FILE, serializedState, FileConstants.SOURCE_DIR) }
@@ -152,8 +164,8 @@ class ReplicationHydrationProcessorTest {
   companion object {
     // Validates empty or null states serialize as "{}"
     @JvmStatic
-    private fun stateMatrix(): Stream<Arguments> =
-      Stream.of(
+    private fun stateMatrix() =
+      listOf(
         Arguments.of(State().withState(null), 0),
         Arguments.of(null, 0),
         Arguments.of(State().withState(Jsons.jsonNode("this is" to "nested for some reason")), 1),
@@ -161,17 +173,14 @@ class ReplicationHydrationProcessorTest {
   }
 
   object Fixtures {
-    private const val WORKLOAD_ID = "workload-id-13"
-
     val workload =
       Workload(
-        WORKLOAD_ID,
-        listOf(),
-        "inputPayload",
-        "logPath",
-        "geography",
-        WorkloadType.SYNC,
-        UUID.randomUUID(),
+        id = InputFetcherTest.Fixtures.WORKLOAD_ID,
+        labels = mutableListOf(),
+        inputPayload = "inputPayload",
+        logPath = "logPath",
+        type = WorkloadType.SYNC,
+        autoId = UUID.randomUUID(),
       )
   }
 }

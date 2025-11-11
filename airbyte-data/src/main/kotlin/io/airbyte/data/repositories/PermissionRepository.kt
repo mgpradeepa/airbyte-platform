@@ -5,6 +5,8 @@
 package io.airbyte.data.repositories
 
 import io.airbyte.data.repositories.entities.Permission
+import io.airbyte.db.instance.configs.jooq.generated.enums.PermissionType
+import io.micronaut.core.annotation.Introspected
 import io.micronaut.data.annotation.Query
 import io.micronaut.data.jdbc.annotation.JdbcRepository
 import io.micronaut.data.model.query.builder.sql.Dialect
@@ -23,9 +25,24 @@ interface PermissionRepository : PageableRepository<Permission, UUID> {
 
   fun findByUserId(userId: UUID): List<Permission>
 
+  fun findByServiceAccountId(serviceAccountId: UUID): List<Permission>
+
   fun findByOrganizationId(organizationId: UUID): List<Permission>
 
+  fun findByWorkspaceId(workspaceId: UUID): List<Permission>
+
+  fun findByGroupId(groupId: UUID): List<Permission>
+
   fun deleteByIdIn(permissionIds: List<UUID>)
+
+  @Query(
+    """
+    select * from permission p
+    join auth_user au on p.user_id = au.user_id
+    where au.auth_user_id = :authUserId
+  """,
+  )
+  fun queryByAuthUser(authUserId: String): List<Permission>
 
   @Query(
     """
@@ -38,4 +55,78 @@ interface PermissionRepository : PageableRepository<Permission, UUID> {
   """,
   )
   fun findByUserEmail(email: String): List<Permission>
+
+  @Query(
+    """
+      select organization_id as organization_id, count(user_id) as count
+      from permission p
+      join "user" u on p.user_id = u.id
+      where p.organization_id in (:orgIds)
+      group by p.organization_id
+    """,
+  )
+  fun getMemberCountByOrgIdList(orgIds: List<UUID>): List<OrgMemberCount>
+
+  @Query(
+    """
+    SELECT EXISTS (
+      SELECT 1 FROM permission
+      WHERE user_id = :userId
+      AND permission_type = 'instance_admin'
+    )
+    """,
+  )
+  fun isInstanceAdmin(userId: UUID): Boolean
+
+  @Query(
+    """
+    SELECT EXISTS (
+      SELECT 1 FROM permission
+      WHERE user_id = :userId
+      AND organization_id = :organizationId
+    )
+    """,
+  )
+  fun existsByUserIdAndOrganizationId(
+    userId: UUID,
+    organizationId: UUID,
+  ): Boolean
+
+  @Query(
+    """
+    SELECT EXISTS (
+      SELECT 1 FROM permission
+      WHERE group_id = :groupId
+      AND permission_type = :permissionType
+      AND organization_id = :organizationId
+    )
+    """,
+  )
+  fun existsByGroupIdAndPermissionTypeAndOrganizationId(
+    groupId: UUID,
+    permissionType: PermissionType,
+    organizationId: UUID,
+  ): Boolean
+
+  @Query(
+    """
+    SELECT EXISTS (
+      SELECT 1 FROM permission
+      WHERE group_id = :groupId
+      AND permission_type = :permissionType
+      AND workspace_id = :workspaceId
+    )
+    """,
+  )
+  fun existsByGroupIdAndPermissionTypeAndWorkspaceId(
+    groupId: UUID,
+    permissionType: PermissionType,
+    workspaceId: UUID,
+  ): Boolean
 }
+
+@Introspected
+data class OrgMemberCount(
+  val organizationId: UUID,
+  val count: Int? = 0,
+)

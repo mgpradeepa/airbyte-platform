@@ -5,12 +5,14 @@ plugins {
 }
 
 dependencies {
-  annotationProcessor(platform(libs.micronaut.platform))
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
+
+  ksp(platform(libs.micronaut.platform))
+  ksp(libs.bundles.micronaut.annotation.processor)
 
   implementation(platform(libs.micronaut.platform))
   implementation(libs.bundles.micronaut)
   implementation(libs.bundles.keycloak.client)
+  implementation(libs.kotlin.logging)  // Explicitly needed for KotlinLogging (was leaked through api() before)
 
   implementation(project(":oss:airbyte-commons"))
   implementation(project(":oss:airbyte-commons-auth"))
@@ -23,8 +25,6 @@ dependencies {
 
   runtimeOnly(libs.bundles.logback)
 
-  testAnnotationProcessor(platform(libs.micronaut.platform))
-  testAnnotationProcessor(libs.bundles.micronaut.test.annotation.processor)
 
   testImplementation(libs.bundles.micronaut.test)
   testImplementation(libs.bundles.junit)
@@ -36,7 +36,7 @@ dependencies {
 
 airbyte {
   application {
-    mainClass = "io.airbyte.keycloak.setup.Application"
+    mainClass = "io.airbyte.keycloak.setup.ApplicationKt"
     defaultJvmArgs = listOf("-XX:+ExitOnOutOfMemoryError", "-XX:MaxRAMPercentage=75.0")
   }
   docker {
@@ -44,11 +44,18 @@ airbyte {
   }
 }
 
-val copyScripts = tasks.register<Copy>("copyScripts") {
-  from("scripts")
-  into("build/airbyte/docker/")
-}
+val copyScripts =
+  tasks.register<Copy>("copyScripts") {
+    from("scripts")
+    into("build/airbyte/docker/")
+  }
 
 tasks.named("dockerCopyDistribution") {
   dependsOn(copyScripts)
+}
+
+// The DuplicatesStrategy will be required while this module is mixture of kotlin and java dependencies.
+// Once the code has been migrated to kotlin, this can also be removed.
+tasks.withType<Jar>().configureEach {
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }

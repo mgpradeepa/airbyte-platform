@@ -6,6 +6,7 @@ package io.airbyte.featureflag
 
 import com.launchdarkly.sdk.LDContext
 import com.launchdarkly.sdk.server.LDClient
+import io.airbyte.micronaut.runtime.AirbyteFeatureFlagConfig
 import io.micronaut.context.annotation.Bean
 import io.micronaut.context.annotation.Property
 import io.micronaut.context.annotation.Replaces
@@ -25,6 +26,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -38,11 +40,12 @@ import kotlin.test.assertTrue
 /** workspaceId used across multiple tests */
 private val workspaceId = UUID.randomUUID()
 
-class ConfigFileClientTest {
+internal class ConfigFileClientTest {
   @Test
   fun `verify config-file functionality`() {
     val cfg = Path.of("src", "test", "resources", "flags.yml")
-    val client: FeatureFlagClient = ConfigFileClient(cfg)
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(path = cfg)
+    val client: FeatureFlagClient = ConfigFileClient(airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
 
     // defined in flags.yml
     val testTrue = Temporary(key = "test-true", default = false)
@@ -77,7 +80,8 @@ class ConfigFileClientTest {
 
   @Test
   fun `verify no-config file returns default flag state`() {
-    val client: FeatureFlagClient = ConfigFileClient(null)
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig()
+    val client: FeatureFlagClient = ConfigFileClient(airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
     val defaultFalse = Temporary(key = "default-false", default = false)
     val defaultTrue = Temporary(key = "default-true", default = true)
     val defaultResponse = Temporary(key = "default-string", default = "response")
@@ -94,7 +98,9 @@ class ConfigFileClientTest {
 
   @Test
   fun `verify missing file returns default flag state`() {
-    val client: FeatureFlagClient = ConfigFileClient(Path.of("src", "test", "resources", "feature-flags-dne-missing.yml"))
+    val path = Path.of("src", "test", "resources", "feature-flags-dne-missing.yml")
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(path = path)
+    val client: FeatureFlagClient = ConfigFileClient(airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
     val defaultFalse = Temporary(key = "default-false", default = false)
     val defaultTrue = Temporary(key = "default-true", default = true)
     val defaultResponse = Temporary(key = "default-string", default = "response")
@@ -111,7 +117,9 @@ class ConfigFileClientTest {
 
   @Test
   fun `verify directory instead of file returns default flag state`() {
-    val client: FeatureFlagClient = ConfigFileClient(Path.of("src", "test", "resources"))
+    val path = Path.of("src", "test", "resources")
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(path = path)
+    val client: FeatureFlagClient = ConfigFileClient(airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
     val defaultFalse = Temporary(key = "default-false", default = false)
     val defaultTrue = Temporary(key = "default-true", default = true)
     val defaultResponse = Temporary(key = "default-string", default = "response")
@@ -160,7 +168,8 @@ class ConfigFileClientTest {
         writeText(contents0)
       }
 
-    val client: FeatureFlagClient = ConfigFileClient(tmpConfig)
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(path = tmpConfig)
+    val client: FeatureFlagClient = ConfigFileClient(airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
 
     // define the feature-flags
     val testTrue = Temporary(key = "reload-test-true", default = false)
@@ -190,7 +199,8 @@ class ConfigFileClientTest {
   @Test
   fun `verify env-var flag support`() {
     val cfg = Path.of("src", "test", "resources", "flags.yml")
-    val client: FeatureFlagClient = ConfigFileClient(cfg)
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(path = cfg)
+    val client: FeatureFlagClient = ConfigFileClient(airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
 
     val evTrue = EnvVar(envVar = "env-true").apply { fetcher = { _ -> "true" } }
     val evFalse = EnvVar(envVar = "env-true").apply { fetcher = { _ -> "false" } }
@@ -210,7 +220,8 @@ class ConfigFileClientTest {
   @Test
   fun `verify context support`() {
     val cfg = Path.of("src", "test", "resources", "flags.yml")
-    val client: FeatureFlagClient = ConfigFileClient(cfg)
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(path = cfg)
+    val client: FeatureFlagClient = ConfigFileClient(airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
 
     // included in one context override
     val uuidAAAA = UUID.fromString("00000000-aaaa-0000-aaaa-000000000000")
@@ -253,7 +264,8 @@ class FeatureFlagServiceClientTest {
   @Test
   fun `verify api call`() {
     val httpClient = mockk<OkHttpClient>(relaxed = true)
-    val client = FeatureFlagServiceClient(httpClient, baseUrl)
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(baseUrl = baseUrl)
+    val client = FeatureFlagServiceClient(httpClient = httpClient, airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
     client.boolVariation(Temporary(key = "test-url-gen", default = true), Connection(UUID.randomUUID()))
     verify {
       httpClient.newCall(
@@ -280,7 +292,8 @@ class FeatureFlagServiceClientTest {
           newCall(match { it.url.query == "kind=connection&value=$connectionId&kind=workspace&value=$workspaceId" })
         } returns mockResponse("multi-eval")
       }
-    val client = FeatureFlagServiceClient(httpClient, baseUrl)
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(baseUrl = baseUrl)
+    val client = FeatureFlagServiceClient(httpClient = httpClient, airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
 
     with(client) {
       assertEquals("connection-eval", stringVariation(testFlag, Connection(connectionId)))
@@ -302,7 +315,8 @@ class FeatureFlagServiceClientTest {
         every { newCall(match { it.url.encodedPath.endsWith("/${testIntFlag.key}/evaluate") }) } returns mockResponse("777")
         every { newCall(match { it.url.encodedPath.endsWith("/${testStringFlag.key}/evaluate") }) } returns mockResponse("airbyte")
       }
-    val client = FeatureFlagServiceClient(httpClient, baseUrl)
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(baseUrl = baseUrl)
+    val client = FeatureFlagServiceClient(httpClient = httpClient, airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
 
     with(client) {
       assertEquals(true, boolVariation(testBooleanFlag, Connection(connectionId)))
@@ -318,7 +332,8 @@ class FeatureFlagServiceClientTest {
       mockk<OkHttpClient> {
         every { newCall(match { it.url.encodedPath.endsWith("/${flag.key}/evaluate") }) } returns mockResponse("not found", statusCode = 404)
       }
-    val client = FeatureFlagServiceClient(httpClient, baseUrl)
+    val airbyteFeatureFlagConfig = AirbyteFeatureFlagConfig(baseUrl = baseUrl)
+    val client = FeatureFlagServiceClient(httpClient = httpClient, airbyteFeatureFlagConfig = airbyteFeatureFlagConfig)
 
     with(client) {
       assertEquals(42, intVariation(flag, Connection(UUID.randomUUID())))
@@ -450,6 +465,53 @@ class LaunchDarklyClientTest {
     LaunchDarklyClient(ldClient).boolVariation(testFlag, ctxAnon)
     assertTrue(context.captured.isAnonymous)
   }
+
+  @Test
+  fun `verify context interceptor support for bool, int and string variations`() {
+    val testBoolFlag = Temporary(key = "test-interceptor-bool", default = false)
+    val testIntFlag = Temporary(key = "test-interceptor-int", default = 0)
+    val testStringFlag = Temporary(key = "test-interceptor-string", default = "string")
+    val ctx = Workspace(ANONYMOUS)
+
+    val ldClient: LDClient = mockk()
+    val featureFlagClient = LaunchDarklyClient(ldClient)
+    val boolContextCaptor = slot<LDContext>()
+    every {
+      ldClient.boolVariation(testBoolFlag.key, capture(boolContextCaptor), any())
+    } answers {
+      true
+    }
+
+    val intContextCaptor = slot<LDContext>()
+    every {
+      ldClient.intVariation(testIntFlag.key, capture(intContextCaptor), any())
+    } answers {
+      1
+    }
+
+    val stringContextCaptor = slot<LDContext>()
+    every {
+      ldClient.stringVariation(testStringFlag.key, capture(stringContextCaptor), any())
+    } answers {
+      "yolo"
+    }
+
+    val interceptedContext = Connection(UUID.randomUUID())
+    val interceptor: ContextInterceptor =
+      mockk {
+        every { intercept(any()) } returns interceptedContext
+      }
+    featureFlagClient.registerContextInterceptor(interceptor)
+
+    featureFlagClient.boolVariation(testBoolFlag, ctx)
+    assertEquals(interceptedContext.toLDContext(), boolContextCaptor.captured)
+
+    featureFlagClient.intVariation(testIntFlag, ctx)
+    assertEquals(interceptedContext.toLDContext(), intContextCaptor.captured)
+
+    featureFlagClient.stringVariation(testStringFlag, ctx)
+    assertEquals(interceptedContext.toLDContext(), stringContextCaptor.captured)
+  }
 }
 
 class TestClientTest {
@@ -531,6 +593,26 @@ class TestClientTest {
       assertFalse("undefined flags should always return false") { boolVariation(evEmpty, ctx) }
     }
   }
+
+  @Test
+  @Suppress("UNCHECKED_CAST")
+  fun `verify generic variation retrieval by type`() {
+    val boolFlag = Temporary(key = "flag1", default = false)
+    val intFlag = Temporary(key = "flag2", default = 0)
+    val stringFlag = Temporary(key = "flag3", default = "default")
+    val unsupportedType = Temporary(key = "flag4", default = listOf("this", "should", "fail"))
+    val nullType = Temporary(key = "flag5", default = null)
+    val values = mapOf(intFlag.key to 123, boolFlag.key to true, stringFlag.key to "test")
+    val ctx = User("test")
+
+    val client: FeatureFlagClient = TestClient(values)
+
+    assertEquals(123, client.variation(intFlag, ctx))
+    assertEquals(true, client.variation(boolFlag, ctx))
+    assertEquals("test", client.variation(stringFlag, ctx))
+    assertThrows<IllegalArgumentException> { client.variation(unsupportedType, ctx) }
+    assertThrows<IllegalArgumentException> { client.variation(nullType, ctx) }
+  }
 }
 
 @MicronautTest(rebuildContext = true)
@@ -556,14 +638,13 @@ class InjectTest {
     assertTrue { featureFlagClient.boolVariation(flag, context) }
   }
 
-  @Property(name = CONFIG_FF_CLIENT, value = "")
   @Test
-  fun `ConfigFileClient loads if client property is empty`() {
+  fun `ConfigFileClient loads if client property is not set`() {
     assertTrue { featureFlagClient is ConfigFileClient }
     assertTrue { featureFlagClient.boolVariation(flag, context) }
   }
 
-  @Property(name = CONFIG_FF_CLIENT, value = "not-launchdarkly")
+  @Property(name = CONFIG_FF_CLIENT, value = "configfile")
   @Test
   fun `ConfigFileClient loads if client property is not ${CONFIG_FF_CLIENT_VAL_LAUNCHDARKLY}`() {
     assertTrue { featureFlagClient is ConfigFileClient }

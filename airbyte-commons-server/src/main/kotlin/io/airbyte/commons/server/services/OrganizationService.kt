@@ -10,11 +10,13 @@ import io.airbyte.api.problems.model.generated.ProblemMessageData
 import io.airbyte.api.problems.model.generated.ProblemResourceData
 import io.airbyte.api.problems.throwable.generated.ResourceNotFoundProblem
 import io.airbyte.api.problems.throwable.generated.StateConflictProblem
-import io.airbyte.commons.server.ConnectionId
-import io.airbyte.commons.server.OrganizationId
+import io.airbyte.commons.entitlements.EntitlementService
 import io.airbyte.config.OrganizationPaymentConfig
 import io.airbyte.config.OrganizationPaymentConfig.PaymentStatus
 import io.airbyte.data.services.shared.ConnectionAutoDisabledReason
+import io.airbyte.domain.models.ConnectionId
+import io.airbyte.domain.models.EntitlementPlan
+import io.airbyte.domain.models.OrganizationId
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.transaction.annotation.Transactional
 import jakarta.inject.Singleton
@@ -58,7 +60,21 @@ interface OrganizationService {
    *
    * @param organizationId the ID of the organization that started a new subscription
    */
-  fun handleSubscriptionStarted(organizationId: OrganizationId)
+  fun handleSubscriptionStarted(
+    organizationId: OrganizationId,
+    orbPlanId: String?,
+    isTrial: Boolean,
+  )
+
+  /**
+   * Handle the update of a subscription for an organization (e.g. from trial to plan)
+   *
+   * @param organizationId the ID of the organization that started a new subscription
+   */
+  fun handleTrialToEntitlementPlan(
+    organizationId: OrganizationId,
+    entitlementPlan: EntitlementPlan,
+  )
 
   /**
    * Handle the end of a subscription for an organization
@@ -74,6 +90,7 @@ open class OrganizationServiceImpl(
   private val connectionRepository: ConnectionRepository,
   private val organizationPaymentConfigRepository: OrganizationPaymentConfigRepository,
   private val billingTrackingHelper: BillingTrackingHelper,
+  private val entitlementService: EntitlementService,
 ) : OrganizationService {
   @Transactional("config")
   override fun disableAllConnections(
@@ -121,7 +138,11 @@ open class OrganizationServiceImpl(
     disableAllConnections(organizationId, ConnectionAutoDisabledReason.INVOICE_MARKED_UNCOLLECTIBLE)
   }
 
-  override fun handleSubscriptionStarted(organizationId: OrganizationId) {
+  override fun handleSubscriptionStarted(
+    organizationId: OrganizationId,
+    orbPlanId: String?,
+    isTrial: Boolean,
+  ) {
     val orgPaymentConfig =
       organizationPaymentConfigRepository.findByOrganizationId(organizationId.value)
         ?: throw ResourceNotFoundProblem(
@@ -141,6 +162,19 @@ open class OrganizationServiceImpl(
     organizationPaymentConfigRepository.savePaymentConfig(orgPaymentConfig)
     logger.info {
       "Organization ${orgPaymentConfig.organizationId} successfully updated from $currentSubscriptionStatus to ${orgPaymentConfig.subscriptionStatus}"
+    }
+  }
+
+  override fun handleTrialToEntitlementPlan(
+    organizationId: OrganizationId,
+    entitlementPlan: EntitlementPlan,
+  ) {
+    try {
+      entitlementService.addOrUpdateOrganization(organizationId, entitlementPlan)
+    } catch (e: Exception) {
+      logger.error(e) {
+        "There was a problem adding the organization to the entitlement plan. organizationId=$organizationId entitlementPlan=$entitlementPlan"
+      }
     }
   }
 

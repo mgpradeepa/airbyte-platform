@@ -1,8 +1,7 @@
+
 import com.github.gradle.node.NodeExtension
 import com.github.gradle.node.pnpm.task.PnpmTask
 import groovy.json.JsonSlurper
-import io.airbyte.gradle.plugins.TASK_DOCKER_BUILD
-import io.airbyte.gradle.tasks.DockerBuildxTask
 import java.io.FileReader
 
 plugins {
@@ -20,35 +19,28 @@ ext {
  * Utility function to parse a .gitignore file into a list of ignore pattern entries
  */
 fun parseIgnoreFile(f: File): List<String> {
-    val ignores = mutableListOf<String>()
-    f.forEachLine { line ->
-        // ignore comments and empty lines
-        if (!line.startsWith('#') && line.isNotEmpty()) {
-            ignores.add(line)
-        }
-    }
-    return ignores
+    return f.readLines()
+        .filter { !it.startsWith('#') && it.isNotEmpty() }
+        .toList()
 }
 
-
 // Use the node version that's defined in the .nvmrc file
-val nodeVersion = file("${projectDir}/.nvmrc").readText().trim()
+val nodeVersion = file("$projectDir/.nvmrc").readText().trim()
 
 // Read pnpm version to use from package.json engines.pnpm entry
-val parsedJson = JsonSlurper().parse(FileReader("${projectDir}/package.json")) as Map<*, *>  // Cast to Map
-val engines = parsedJson["engines"] as? Map<*, *>  // Safely cast to Map if 'engines' exists
-val pnpmVer = engines?.get("pnpm")?.toString()?.trim()  // Extract 'pnpm' as String and trim
+val parsedJson = JsonSlurper().parse(FileReader("$projectDir/package.json")) as Map<*, *> // Cast to Map
+val engines = parsedJson["engines"] as? Map<*, *> // Safely cast to Map if 'engines' exists
+val pnpmVer = engines?.get("pnpm")?.toString()?.trim() // Extract 'pnpm' as String and trim
 
 /**
  * A list of all files outside the webapp folder, that the webapp build depends on, i.e.
  * if those change we can't reuse a cached build.
  */
-val outsideWebappDependencies = listOf(
+val outsideWebappDependencies =
+listOf(
     project(":oss:airbyte-api:server-api").file("src/main/openapi/config.yaml").path,
-    project(":oss:airbyte-api:commons").file("src/main/openapi/cloud-config.yaml").path,
     project(":oss:airbyte-api:problems-api").file("src/main/openapi/api-problems.yaml").path,
-    project(":oss:airbyte-connector-builder-server").file("src/main/openapi/openapi.yaml").path,
-    project(":oss:airbyte-connector-builder-server").file("CDK_VERSION").path,
+    file("../airbyte-connector-builder-resources/CDK_VERSION").path,
 )
 
 configure<NodeExtension> {
@@ -69,19 +61,22 @@ tasks.named("pnpmInstall") {
     /*
     Add patches folder to inputs of pnpmInstall task, since it has pnpm-lock.yml as an output
     thus wouldn't rerun in case a patch get changed
-    */
+     */
     inputs.dir("patches")
+    doNotTrackState("gradle is slower at caching than pnpm install")
 }
 
 // fileTree to watch node_modules, but exclude the .cache dir since that might have changes on every build
-val nodeModules = fileTree("node_modules") {
+val nodeModules =
+fileTree("node_modules") {
     exclude(".cache")
 }
 
 /**
  * All files inside the webapp folder that aren't gitignored
  */
-val allFiles = fileTree(".") {
+val allFiles =
+fileTree(".") {
     exclude(parseIgnoreFile(file("../.gitignore")))
     exclude(parseIgnoreFile(file(".gitignore")))
     exclude(parseIgnoreFile(file("./src/core/api/generated/.gitignore")))
@@ -97,13 +92,8 @@ var webappVersion = (ext["ossRootProject"] as Project).ext["webapp_version"] as 
 tasks.register<PnpmTask>("pnpmBuild") {
     dependsOn("pnpmInstall")
 
-    environment.put("VERSION", webappVersion)
+    environment.put("AIRBYTE_VERSION", webappVersion)
 
-    // Pass the WEBAPP_ENV_PATH environment variable to the Vite build process
-    System.getenv("WEBAPP_ENV_PATH")?.also {
-        environment.put("WEBAPP_ENV_PATH", it)
-        inputs.file(it)
-    }
     args = listOf("build")
 
     // The WEBAPP_BUILD_CLOUD_ENV environment variable is an input for this task,
@@ -112,18 +102,19 @@ tasks.register<PnpmTask>("pnpmBuild") {
     inputs.files(allFiles, outsideWebappDependencies)
 
     outputs.dir(project.ext.get("appBuildDir") as String)
+    outputs.cacheIf { true }
 }
 
 tasks.register<PnpmTask>("test") {
     dependsOn("pnpmInstall")
-    
+
     args = listOf("run", "test:ci")
     inputs.files(allFiles, outsideWebappDependencies)
 
     /*
     The test has no outputs, thus we always treat the outputs up to date
     as long as the inputs have not changed
-    */
+     */
     outputs.upToDateWhen { true }
 }
 
@@ -133,9 +124,10 @@ tasks.register<PnpmTask>("cypress") {
     /*
     If the cypressWebappKey property has been set from the outside via the workflow file
     we'll record the cypress session, otherwise we're not recording
-    */
+     */
     val hasRecordingKey = !System.getenv("CYPRESS_RECORD_KEY").isNullOrEmpty()
-    args = if (hasRecordingKey && System.getProperty("cypressRecord", "false") == "true") {
+    args =
+    if (hasRecordingKey && System.getProperty("cypressRecord", "false") == "true") {
         val group = System.getenv("CYPRESS_GROUP") ?: "default-group"
         listOf("run", "cypress:run", "--record", "--group", group)
     } else {
@@ -145,24 +137,7 @@ tasks.register<PnpmTask>("cypress") {
     /*
     Mark the outputs as never up to date, to ensure we always run the tests.
     We want this because they are e2e tests and can depend on other factors e.g., external dependencies.
-    */
-    outputs.upToDateWhen { false }
-}
-
-tasks.register<PnpmTask>("cypressCloud") {
-    dependsOn("pnpmInstall")
-
-    val hasRecordingKey = !System.getenv("CYPRESS_RECORD_KEY").isNullOrEmpty()
-    args = if (hasRecordingKey && System.getProperty("cypressRecord", "false") == "true") {
-        listOf("run", "cloud-test:stage", "--record")
-    } else {
-        listOf("run", "cloud-test:stage")
-    }
-
-    /*
-    Mark the outputs as never up to date, to ensure we always run the tests.
-    We want this because they are e2e tests and can depend on other factors e.g., external dependencies.
-    */
+     */
     outputs.upToDateWhen { false }
 }
 
@@ -229,21 +204,10 @@ tasks.register<PnpmTask>("buildStorybook") {
 
     outputs.dir("build/storybook")
 
-    environment = mapOf(
-        "NODE_OPTIONS" to "--max_old_space_size=8192"
+    environment =
+    mapOf(
+        "NODE_OPTIONS" to "--max_old_space_size=8192",
     )
-}
-
-tasks.register<Copy>("copyBuildOutput") {
-    dependsOn("pnpmBuild")
-
-    from("${project.projectDir}/${project.ext.get("appBuildDir")}")
-    into("build/airbyte/docker/bin/build")
-}
-
-tasks.register<Copy>("copyNginx") {
-    from("${project.projectDir}/nginx")
-    into("build/airbyte/docker/bin/nginx")
 }
 
 // Those tasks should be run as part of the "check" task
@@ -251,26 +215,6 @@ tasks.named("check") {
     dependsOn("licenseCheck", "validateLock", "unusedCode", "prettier", "test")
 }
 
-// Some check tasks only should be run on CI, thus a separate ciCheck task
-tasks.register("ciCheck") {
-    dependsOn("check", "validateLinks")
-}
-
 tasks.named("build") {
     dependsOn("buildStorybook")
-}
-
-tasks.register<DockerBuildxTask>(TASK_DOCKER_BUILD) {
-    dependsOn("copyNginx", "copyBuildOutput")
-    imageName = "webapp"
-
-    if (cloudEnv.isNotEmpty()) {
-        buildArgs.put("NGINX_CONFIG", "bin/nginx/cloud.conf.template")
-        val cloudVersion = project(":cloud").ext["webapp_version"] as String
-        tag = if (cloudEnv == "test") "test" else "cloud-$cloudEnv-$cloudVersion"
-    }
-}
-
-tasks.named("assemble").configure {
-    dependsOn("copyNginx", "copyBuildOutput", TASK_DOCKER_BUILD)
 }

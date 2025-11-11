@@ -4,10 +4,10 @@
 
 package io.airbyte.connectorSidecar
 
-import com.google.common.annotations.VisibleForTesting
-import com.google.common.base.Stopwatch
+import io.airbyte.commons.annotation.InternalForTesting
+import io.airbyte.commons.io.IOs
 import io.airbyte.commons.io.LineGobbler
-import io.airbyte.commons.json.Jsons
+import io.airbyte.commons.logging.LogSource
 import io.airbyte.commons.protocol.AirbyteMessageSerDeProvider
 import io.airbyte.commons.protocol.AirbyteProtocolVersionedMigratorFactory
 import io.airbyte.commons.version.AirbyteProtocolVersion
@@ -18,51 +18,52 @@ import io.airbyte.config.StandardCheckConnectionInput
 import io.airbyte.config.StandardCheckConnectionOutput
 import io.airbyte.config.StandardDiscoverCatalogInput
 import io.airbyte.metrics.MetricClient
+import io.airbyte.micronaut.runtime.AirbyteConnectorConfig
+import io.airbyte.micronaut.runtime.AirbyteSidecarConfig
 import io.airbyte.persistence.job.models.IntegrationLauncherConfig
 import io.airbyte.workers.helper.GsonPksExtractor
 import io.airbyte.workers.internal.AirbyteStreamFactory
+import io.airbyte.workers.internal.MessageOrigin
 import io.airbyte.workers.internal.VersionedAirbyteStreamFactory
 import io.airbyte.workers.internal.VersionedAirbyteStreamFactory.InvalidLineFailureConfiguration
 import io.airbyte.workers.models.SidecarInput
 import io.airbyte.workers.pod.FileConstants
-import io.airbyte.workers.workload.JobOutputDocStore
+import io.airbyte.workers.workload.WorkloadOutputWriter
 import io.airbyte.workload.api.client.WorkloadApiClient
-import io.airbyte.workload.api.client.model.generated.WorkloadFailureRequest
-import io.airbyte.workload.api.client.model.generated.WorkloadSuccessRequest
+import io.airbyte.workload.api.domain.WorkloadFailureRequest
+import io.airbyte.workload.api.domain.WorkloadSuccessRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.github.oshai.kotlinlogging.withLoggingContext
-import io.micronaut.context.annotation.Context
-import io.micronaut.context.annotation.Value
 import jakarta.inject.Named
+import jakarta.inject.Singleton
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.util.Optional
-import javax.annotation.PostConstruct
 import kotlin.system.exitProcess
+import kotlin.time.TimeSource
+import kotlin.time.toJavaDuration
 
 private val logger = KotlinLogging.logger {}
 
-@Context
+@Singleton
 class ConnectorWatcher(
   @Named("output") val outputPath: Path,
-  @Named("configDir") val configDir: String,
-  @Value("\${airbyte.sidecar.file-timeout-minutes}") val fileTimeoutMinutes: Int,
-  @Value("\${airbyte.sidecar.file-timeout-minutes-within-sync}") val fileTimeoutMinutesWithinSync: Int,
+  private val airbyteConnectorConfig: AirbyteConnectorConfig,
+  private val airbyteSidecarConfig: AirbyteSidecarConfig,
+  private val sidecarInput: SidecarInput,
   private val connectorMessageProcessor: ConnectorMessageProcessor,
   private val serDeProvider: AirbyteMessageSerDeProvider,
   private val airbyteProtocolVersionedMigratorFactory: AirbyteProtocolVersionedMigratorFactory,
   private val gsonPksExtractor: GsonPksExtractor,
   private val workloadApiClient: WorkloadApiClient,
-  private val jobOutputDocStore: JobOutputDocStore,
+  private val outputWriter: WorkloadOutputWriter,
   private val logContextFactory: SidecarLogContextFactory,
   private val heartbeatMonitor: HeartbeatMonitor,
   private val metricClient: MetricClient,
 ) {
-  @PostConstruct
   fun run() {
-    val sidecarInput = readSidecarInput()
     withLoggingContext(logContextFactory.create(sidecarInput.logPath)) {
       LineGobbler.startSection(sidecarInput.operationType.toString())
       var heartbeatStarted = false
@@ -91,13 +92,8 @@ class ConnectorWatcher(
     }
   }
 
-  private fun readSidecarInput(): SidecarInput {
-    val inputContent = readFile(FileConstants.SIDECAR_INPUT_FILE)
-    return Jsons.deserialize(inputContent, SidecarInput::class.java)
-  }
-
   private fun waitForConnectorOutput(input: SidecarInput) {
-    val stopwatch = Stopwatch.createStarted()
+    val stopwatch = TimeSource.Monotonic
     while (!areNeededFilesPresent()) {
       Thread.sleep(100)
       if (heartbeatMonitor.shouldAbort()) {
@@ -106,7 +102,11 @@ class ConnectorWatcher(
       }
       val isWithinSync = input.discoverCatalogInput?.manual?.not() ?: false
       if (hasFileTimeoutReached(stopwatch, isWithinSync)) {
-        val message = "Failed to find output files from connector within timeout of $fileTimeoutMinutes minute(s). Is the connector still running?"
+        readOutputForLogs()
+
+        val message =
+          "Failed to find output files from connector within timeout of " +
+            "${airbyteSidecarConfig.fileTimeoutMinutes} minute(s). Is the connector still running?"
         logger.warn { message }
         val failureReason =
           FailureReason()
@@ -115,6 +115,25 @@ class ConnectorWatcher(
         failWorkload(input.workloadId, failureReason)
         exitFileNotFound()
       }
+    }
+  }
+
+  /**
+   * Reads the output file using the AirbyteStreamFactory.
+   * This has the side effect of processing the log messages from the connector.
+   */
+  private fun readOutputForLogs() {
+    val stream = getConnectorOutputStream()
+    val streamFactory = getStreamFactory(sidecarInput.integrationLauncherConfig)
+    withLoggingContext(logContextFactory.createConnectorContext(sidecarInput.logPath)) {
+      streamFactory
+        .create(
+          bufferedReader = IOs.newBufferedReader(stream),
+          origin = if (logContextFactory.inferLogSource() == LogSource.DESTINATION) MessageOrigin.DESTINATION else MessageOrigin.SOURCE,
+        ).forEach {
+          // We're just forcing the stream reader to read the messages.
+          // The expected side effect is that the stream reader will log AirbyteLog Messages
+        }
     }
   }
 
@@ -168,80 +187,93 @@ class ConnectorWatcher(
     connectorOutput: ConnectorJobOutput,
   ) {
     logger.info { "Writing output of $workloadId to the doc store" }
-    jobOutputDocStore.write(workloadId, connectorOutput)
+    outputWriter.write(workloadId, connectorOutput)
   }
 
   private fun markWorkloadSuccess(workloadId: String) {
     logger.info { "Marking workload $workloadId as successful" }
-    workloadApiClient.workloadApi.workloadSuccess(WorkloadSuccessRequest(workloadId))
+    workloadApiClient.workloadSuccess(WorkloadSuccessRequest(workloadId))
   }
 
   fun handleException(
     input: SidecarInput,
     e: Exception,
   ) {
-    logger.error(e) { "Error performing operation: ${e.javaClass.name}" }
-    val connectorOutput =
-      when (input.operationType) {
-        SidecarInput.OperationType.CHECK -> getFailedOutput(input.checkConnectionInput, e)
-        SidecarInput.OperationType.DISCOVER -> getFailedOutput(input.discoverCatalogInput, e)
-        SidecarInput.OperationType.SPEC -> getFailedOutput(input.integrationLauncherConfig.dockerImage, e)
-      }
-    jobOutputDocStore.write(input.workloadId, connectorOutput)
-    failWorkload(input.workloadId, connectorOutput.failureReason)
-    exitInternalError()
+    try {
+      logger.error(e) { "Error performing operation: ${e.javaClass.name}" }
+      val connectorOutput =
+        when (input.operationType) {
+          SidecarInput.OperationType.CHECK -> getFailedOutput(input.checkConnectionInput, e)
+          SidecarInput.OperationType.DISCOVER -> getFailedOutput(input.discoverCatalogInput, e)
+          SidecarInput.OperationType.SPEC -> getFailedOutput(input.integrationLauncherConfig.dockerImage, e)
+        }
+      outputWriter.write(input.workloadId, connectorOutput)
+      failWorkload(input.workloadId, connectorOutput.failureReason)
+    } catch (e: Exception) {
+      failWorkload(
+        input.workloadId,
+        FailureReason()
+          .withFailureOrigin(FailureReason.FailureOrigin.AIRBYTE_PLATFORM)
+          .withExternalMessage("Unable to persist the job Output, check the document store credentials.")
+          .withInternalMessage(e.message)
+          .withStacktrace(e.stackTraceToString()),
+      )
+    } finally {
+      exitInternalError()
+    }
   }
 
-  @VisibleForTesting
-  fun readFile(fileName: String): String = Files.readString(Path.of(configDir, fileName))
+  @InternalForTesting
+  fun readFile(fileName: String): String = Files.readString(Path.of(airbyteConnectorConfig.configDir, fileName))
 
-  @VisibleForTesting
-  fun areNeededFilesPresent(): Boolean = Files.exists(outputPath) && Files.exists(Path.of(configDir, FileConstants.EXIT_CODE_FILE))
+  @InternalForTesting
+  fun areNeededFilesPresent(): Boolean =
+    Files.exists(outputPath) && Files.exists(Path.of(airbyteConnectorConfig.configDir, FileConstants.EXIT_CODE_FILE))
 
-  @VisibleForTesting
+  @InternalForTesting
   fun getStreamFactory(integrationLauncherConfig: IntegrationLauncherConfig): AirbyteStreamFactory {
     val protocolVersion =
       integrationLauncherConfig.protocolVersion
         ?: AirbyteProtocolVersion.DEFAULT_AIRBYTE_PROTOCOL_VERSION
     return VersionedAirbyteStreamFactory<Any>(
-      serDeProvider,
-      airbyteProtocolVersionedMigratorFactory,
-      protocolVersion,
-      Optional.empty(),
-      Optional.empty(),
-      InvalidLineFailureConfiguration(false),
-      gsonPksExtractor,
-      metricClient,
+      serDeProvider = serDeProvider,
+      migratorFactory = airbyteProtocolVersionedMigratorFactory,
+      protocolVersion = protocolVersion,
+      connectionId = Optional.empty(),
+      configuredAirbyteCatalog = Optional.empty(),
+      invalidLineFailureConfiguration = InvalidLineFailureConfiguration(false),
+      gsonPksExtractor = gsonPksExtractor,
+      metricClient = metricClient,
     )
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   fun exitProperly() {
     logger.info { "Deliberately exiting process with code 0." }
     exitProcess(0)
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   fun exitInternalError() {
     logger.info { "Deliberately exiting process with code 1." }
     exitProcess(1)
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   fun exitFileNotFound() {
     logger.info { "Deliberately exiting process with code 2." }
     exitProcess(2)
   }
 
   fun hasFileTimeoutReached(
-    stopwatch: Stopwatch,
+    stopwatch: TimeSource.Monotonic,
     withinSync: Boolean,
   ): Boolean {
-    val timeoutMinutes = if (withinSync) fileTimeoutMinutesWithinSync else fileTimeoutMinutes
-    return stopwatch.elapsed() > Duration.ofMinutes(timeoutMinutes.toLong())
+    val timeoutMinutes = if (withinSync) airbyteSidecarConfig.fileTimeoutMinutesWithinSync else airbyteSidecarConfig.fileTimeoutMinutes
+    return stopwatch.markNow().elapsedNow().toJavaDuration() > Duration.ofMinutes(timeoutMinutes.toLong())
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   fun getFailedOutput(
     input: StandardCheckConnectionInput?,
     e: Exception,
@@ -271,7 +303,7 @@ class ConnectorWatcher(
       .withFailureReason(failureReason)
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   fun getFailedOutput(
     input: StandardDiscoverCatalogInput?,
     e: Exception,
@@ -289,7 +321,7 @@ class ConnectorWatcher(
       .withFailureReason(failureReason)
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   fun getFailedOutput(
     dockerImage: String,
     e: Exception,
@@ -322,6 +354,6 @@ class ConnectorWatcher(
       } else {
         WorkloadFailureRequest(workloadId)
       }
-    workloadApiClient.workloadApi.workloadFailure(request)
+    workloadApiClient.workloadFailure(request)
   }
 }

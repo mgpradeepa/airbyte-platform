@@ -9,12 +9,11 @@ configurations {
 }
 
 dependencies {
-  annotationProcessor(platform(libs.micronaut.platform))
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
 
   implementation(platform(libs.micronaut.platform))
   implementation(libs.bundles.micronaut)
   implementation(libs.bundles.micronaut.metrics)
+  implementation(libs.kotlin.logging)
 
   implementation(project(":oss:airbyte-commons-storage"))
   implementation(project(":oss:airbyte-config:config-models"))
@@ -27,8 +26,6 @@ dependencies {
   runtimeOnly(libs.snakeyaml)
   runtimeOnly(libs.bundles.logback)
 
-  testAnnotationProcessor(platform(libs.micronaut.platform))
-  testAnnotationProcessor(libs.bundles.micronaut.test.annotation.processor)
 
   testImplementation(project(":oss:airbyte-test-utils"))
   testImplementation(libs.bundles.micronaut.test)
@@ -44,7 +41,7 @@ dependencies {
 airbyte {
   application {
     name = "airbyte-metrics-reporter"
-    mainClass = "io.airbyte.metrics.reporter.Application"
+    mainClass = "io.airbyte.metrics.reporter.ApplicationKt"
     defaultJvmArgs = listOf("-XX:+ExitOnOutOfMemoryError", "-XX:MaxRAMPercentage=75.0")
   }
   docker {

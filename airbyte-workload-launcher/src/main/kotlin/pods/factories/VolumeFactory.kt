@@ -7,7 +7,13 @@ package io.airbyte.workload.launcher.pods.factories
 import io.airbyte.commons.storage.STORAGE_CLAIM_NAME
 import io.airbyte.commons.storage.STORAGE_MOUNT
 import io.airbyte.commons.storage.STORAGE_VOLUME_NAME
+import io.airbyte.micronaut.runtime.AirbyteConnectorConfig
+import io.airbyte.micronaut.runtime.AirbyteStorageConfig
+import io.airbyte.micronaut.runtime.AirbyteWorkerConfig
+import io.airbyte.micronaut.runtime.StorageType
 import io.airbyte.workers.pod.FileConstants
+import io.airbyte.workload.launcher.ArchitectureDecider
+import io.airbyte.workload.launcher.pipeline.stages.model.ArchitectureEnvironmentVariables
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaimVolumeSource
 import io.fabric8.kubernetes.api.model.SecretVolumeSourceBuilder
 import io.fabric8.kubernetes.api.model.Volume
@@ -15,19 +21,14 @@ import io.fabric8.kubernetes.api.model.VolumeBuilder
 import io.fabric8.kubernetes.api.model.VolumeMount
 import io.fabric8.kubernetes.api.model.VolumeMountBuilder
 import io.micronaut.context.annotation.Value
-import io.micronaut.core.util.StringUtils
 import jakarta.inject.Singleton
 
 @Singleton
 data class VolumeFactory(
   @Value("\${google.application.credentials}") private val googleApplicationCredentials: String?,
-  @Value("\${airbyte.worker.job.kube.volumes.secret.secret-name}") private val secretName: String?,
-  @Value("\${airbyte.worker.job.kube.volumes.secret.mount-path}") private val secretMountPath: String?,
-  @Value("\${airbyte.worker.job.kube.volumes.data-plane-creds.secret-name}") private val dataPlaneCredsSecretName: String?,
-  @Value("\${airbyte.worker.job.kube.volumes.data-plane-creds.mount-path}") private val dataPlaneCredsMountPath: String?,
-  @Value("\${airbyte.worker.job.kube.volumes.staging.mount-path}") private val stagingMountPath: String,
-  @Value("\${airbyte.cloud.storage.type}") private val cloudStorageType: String,
-  @Value("\${airbyte.worker.job.kube.volumes.local.enabled}") private val localVolumeEnabled: Boolean,
+  private val airbyteConnectorConfig: AirbyteConnectorConfig,
+  private val airbyteWorkerConfig: AirbyteWorkerConfig,
+  private val airbyteStorageConfig: AirbyteStorageConfig,
 ) {
   private fun config(): VolumeMountPair {
     val volume =
@@ -41,7 +42,7 @@ data class VolumeFactory(
     val mount =
       VolumeMountBuilder()
         .withName(CONFIG_VOLUME_NAME)
-        .withMountPath(FileConstants.CONFIG_DIR)
+        .withMountPath(airbyteConnectorConfig.configDir)
         .build()
 
     return VolumeMountPair(volume, mount)
@@ -64,14 +65,50 @@ data class VolumeFactory(
     return VolumeMountPair(volume, mount)
   }
 
+  private fun socket(socketPath: String): VolumeMountPair {
+    val unixSocketVolume =
+      VolumeBuilder()
+        .withName(SOCKET_VOLUME)
+        .withNewEmptyDir()
+        .withMedium(MEMORY_MEDIUM)
+        .endEmptyDir()
+        .build()
+
+    val unixSocketVolumeMount =
+      VolumeMountBuilder()
+        .withName(SOCKET_VOLUME)
+        .withMountPath(socketPath) // common mount point for the Unix sockets
+        .build()
+    return VolumeMountPair(unixSocketVolume, unixSocketVolumeMount)
+  }
+
   private fun secret(): VolumeMountPair? {
     val hasSecrets =
-      StringUtils.isNotEmpty(secretName) &&
-        StringUtils.isNotEmpty(secretMountPath) &&
-        StringUtils.isNotEmpty(googleApplicationCredentials)
+      (
+        airbyteWorkerConfig.job.kubernetes.volumes.secret.secretName
+          .isNotBlank() ||
+          airbyteWorkerConfig.job.kubernetes.volumes.secret.mountPath
+            .isNotBlank()
+      ) &&
+        (
+          airbyteWorkerConfig.job.kubernetes.volumes.gcsCreds.secretName
+            .isNotBlank() ||
+            airbyteWorkerConfig.job.kubernetes.volumes.gcsCreds.mountPath
+              .isNotBlank()
+        ) &&
+        googleApplicationCredentials?.isNotBlank() == true
     if (!hasSecrets) {
       return null
     }
+
+    val secretName =
+      airbyteWorkerConfig.job.kubernetes.volumes.gcsCreds.secretName.ifBlank {
+        airbyteWorkerConfig.job.kubernetes.volumes.secret.secretName
+      }
+    val secretMountPath =
+      airbyteWorkerConfig.job.kubernetes.volumes.gcsCreds.mountPath.ifBlank {
+        airbyteWorkerConfig.job.kubernetes.volumes.secret.mountPath
+      }
 
     val volume =
       VolumeBuilder()
@@ -94,8 +131,10 @@ data class VolumeFactory(
 
   private fun dataplaneCreds(): VolumeMountPair? {
     val hasDataplaneCreds =
-      StringUtils.isNotEmpty(dataPlaneCredsSecretName) &&
-        StringUtils.isNotEmpty(dataPlaneCredsMountPath)
+      airbyteWorkerConfig.job.kubernetes.volumes.dataPlaneCreds.secretName
+        .isNotBlank() &&
+        airbyteWorkerConfig.job.kubernetes.volumes.dataPlaneCreds.mountPath
+          .isNotBlank()
     if (!hasDataplaneCreds) {
       return null
     }
@@ -105,7 +144,7 @@ data class VolumeFactory(
         .withName(DATA_PLANE_CREDS_VOLUME_NAME)
         .withSecret(
           SecretVolumeSourceBuilder()
-            .withSecretName(dataPlaneCredsSecretName)
+            .withSecretName(airbyteWorkerConfig.job.kubernetes.volumes.dataPlaneCreds.secretName)
             .withDefaultMode(420)
             .build(),
         ).build()
@@ -113,7 +152,7 @@ data class VolumeFactory(
     val mount =
       VolumeMountBuilder()
         .withName(DATA_PLANE_CREDS_VOLUME_NAME)
-        .withMountPath(dataPlaneCredsMountPath)
+        .withMountPath(airbyteWorkerConfig.job.kubernetes.volumes.dataPlaneCreds.mountPath)
         .build()
 
     return VolumeMountPair(volume, mount)
@@ -164,7 +203,7 @@ data class VolumeFactory(
     val mount =
       VolumeMountBuilder()
         .withName(STAGING_VOLUME_NAME)
-        .withMountPath(stagingMountPath)
+        .withMountPath(airbyteWorkerConfig.job.kubernetes.volumes.staging.mountPath)
         .build()
 
     return VolumeMountPair(volume, mount)
@@ -230,7 +269,7 @@ data class VolumeFactory(
       sidecarMounts.add(dataPlaneCreds.mount)
     }
 
-    if (cloudStorageType.lowercase() == "local") {
+    if (airbyteStorageConfig.type == StorageType.LOCAL) {
       storage().also {
         volumes.add(it.volume)
         initMounts.add(it.mount)
@@ -238,7 +277,7 @@ data class VolumeFactory(
       }
     }
 
-    if (localVolumeEnabled) {
+    if (airbyteWorkerConfig.job.kubernetes.volumes.local.enabled) {
       connectorHostFileAccess().also {
         volumes.add(it.volume)
         mainMounts.add(it.mount)
@@ -255,7 +294,8 @@ data class VolumeFactory(
 
   fun replication(
     useStaging: Boolean,
-    enableAsyncProfiler: Boolean,
+    enableAsyncProfiler: Boolean = false,
+    architecture: ArchitectureEnvironmentVariables = ArchitectureDecider.buildLegacyEnvironment(),
   ): ReplicationVolumes {
     val volumes = mutableListOf<Volume>()
     val orchVolumeMounts = mutableListOf<VolumeMount>()
@@ -300,14 +340,14 @@ data class VolumeFactory(
       destVolumeMounts.add(staging.mount)
     }
 
-    if (cloudStorageType.lowercase() == "local") {
+    if (airbyteStorageConfig.type == StorageType.LOCAL) {
       storage().also {
         volumes.add(it.volume)
         orchVolumeMounts.add(it.mount)
       }
     }
 
-    if (localVolumeEnabled) {
+    if (airbyteWorkerConfig.job.kubernetes.volumes.local.enabled) {
       connectorHostFileAccess().also {
         volumes.add(it.volume)
         sourceVolumeMounts.add(it.mount)
@@ -317,6 +357,16 @@ data class VolumeFactory(
 
     if (enableAsyncProfiler) {
       sharedTmp().also {
+        volumes.add(it.volume)
+        orchVolumeMounts.add(it.mount)
+        sourceVolumeMounts.add(it.mount)
+        destVolumeMounts.add(it.mount)
+        profilerVolumeMounts.add(it.mount)
+      }
+    }
+
+    if (architecture.isSocketBased()) {
+      socket(architecture.getSocketBasePath()).also {
         volumes.add(it.volume)
         orchVolumeMounts.add(it.mount)
         sourceVolumeMounts.add(it.mount)
@@ -342,6 +392,8 @@ data class VolumeFactory(
     const val SOURCE_VOLUME_NAME = "airbyte-source"
     const val STAGING_VOLUME_NAME = "airbyte-file-staging"
     const val SHARED_TMP = "shared-tmp"
+    const val SOCKET_VOLUME = "unix-socket-volume"
+    const val MEMORY_MEDIUM = "Memory"
 
     // "local" means that the connector has local file access to this volume.
     const val LOCAL_VOLUME_MOUNT = "/local"

@@ -9,12 +9,11 @@ configurations.all {
 }
 
 dependencies {
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
 
   ksp(platform(libs.micronaut.platform))
   ksp(libs.bundles.micronaut.annotation.processor)
 
-  api(libs.bundles.micronaut.annotation)
+  implementation(libs.bundles.micronaut.annotation)
 
   implementation(project(":oss:airbyte-commons"))
   implementation(project(":oss:airbyte-commons-converters"))
@@ -30,14 +29,17 @@ dependencies {
   implementation(project(":oss:airbyte-metrics:metrics-lib"))
   implementation(libs.google.cloud.storage)
   implementation(libs.jackson.databind)
+  implementation(libs.kotlin.logging)
   implementation(libs.bundles.micronaut.data.jdbc)
   implementation(libs.bundles.micronaut.kotlin)
   implementation(libs.bundles.datadog)
+
 
   testImplementation(libs.hamcrest.all)
   testImplementation(libs.platform.testcontainers.postgresql)
   testImplementation(libs.bundles.flyway)
   testImplementation(libs.mockito.inline)
+  testImplementation("org.mockito.kotlin:mockito-kotlin:5.1.0")
   testImplementation(project(":oss:airbyte-test-utils"))
   testImplementation(libs.bundles.junit)
   testImplementation(libs.assertj.core)
@@ -53,7 +55,6 @@ dependencies {
   integrationTestImplementation(project(":oss:airbyte-config:config-persistence"))
 
   testFixturesApi(libs.jackson.databind)
-  testFixturesApi(libs.guava)
   testFixturesApi(project(":oss:airbyte-json-validation"))
   testFixturesApi(project(":oss:airbyte-commons"))
   testFixturesApi(project(":oss:airbyte-config:config-models"))

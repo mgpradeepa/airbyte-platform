@@ -7,7 +7,7 @@ package io.airbyte.initContainer.system
 import io.airbyte.metrics.MetricAttribute
 import io.airbyte.metrics.MetricClient
 import io.airbyte.metrics.OssMetricsRegistry
-import io.airbyte.workers.pod.FileConstants
+import io.airbyte.micronaut.runtime.DEFAULT_CONNECTOR_CONFIG_DIR
 import io.airbyte.workers.pod.FileConstants.DEST_DIR
 import io.airbyte.workers.pod.FileConstants.SOURCE_DIR
 import io.airbyte.workers.pod.FileConstants.STDERR_PIPE_FILE
@@ -19,7 +19,6 @@ import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
-import java.util.EnumSet
 
 /**
  * Wrapper around the Files API for encapsulation and testing purposes.
@@ -34,7 +33,7 @@ class FileClient(
   fun writeInputFile(
     fileName: String,
     fileContents: String,
-    baseDir: String = FileConstants.CONFIG_DIR,
+    baseDir: String = DEFAULT_CONNECTOR_CONFIG_DIR,
   ) {
     try {
       Files.writeString(
@@ -79,7 +78,7 @@ class FileClient(
 
   companion object {
     val pipePermissions =
-      EnumSet.of(
+      setOf(
         PosixFilePermission.OWNER_READ,
         PosixFilePermission.OWNER_WRITE,
         PosixFilePermission.GROUP_READ,

@@ -8,11 +8,16 @@ export enum RoutePaths {
   Source = "source",
   Settings = "settings",
   ConnectorBuilder = "connector-builder",
+  EmbeddedWidget = "embedded-widget",
+  EmbeddedOnboarding = "embedded",
+  Organization = "organization",
+  Onboarding = "onboarding",
 }
 
 export enum DestinationPaths {
   Root = ":destinationId/*", // currently our tabs rely on this * wildcard to detect which tab is currently active
   Connections = "connections",
+  EnterpriseDestination = "enterprise",
   SelectDestinationNew = "new-destination",
   DestinationNew = "new-destination/:destinationDefinitionId",
 }
@@ -20,7 +25,7 @@ export enum DestinationPaths {
 export enum SourcePaths {
   Root = ":sourceId/*", // currently our tabs rely on this * wildcard to detect which tab is currently active
   Connections = "connections",
-  EnterpriseSource = "enterprise/:id",
+  EnterpriseSource = "enterprise",
   SelectSourceNew = "new-source",
   SourceNew = "new-source/:sourceDefinitionId",
 }
@@ -33,9 +38,11 @@ export const enum ConnectionRoutePaths {
   JobHistory = "job-history", // deprecated, used to support legacy logs links
   ConnectionNew = "new-connection",
   Configure = "configure",
+  ConfigureDataActivation = "configure-da",
   ConfigureContinued = "continued",
   Timeline = "timeline",
   Mappings = "mappings",
+  DataActivationMappings = "data-activation-mappings",
 }
 
 export enum SettingsRoutePaths {
@@ -50,7 +57,10 @@ export enum SettingsRoutePaths {
   Workspace = "workspace",
   Organization = "organization",
   OrganizationMembers = "organizationMembers",
+  OrganizationSSO = "organizationSSO",
   WorkspaceMembers = "workspaceMembers",
   Applications = "applications",
   License = "license",
+  User = "user",
+  Embedded = "embedded",
 }

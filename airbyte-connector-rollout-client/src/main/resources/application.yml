@@ -20,39 +20,40 @@ micronaut:
         port: ${STATSD_PORT:8125}
 
 airbyte:
-  control-plane-auth-endpoint: ${CONTROL_PLANE_AUTH_ENDPOINT:}
+  control-plane:
+    auth-endpoint: ${CONTROL_PLANE_AUTH_ENDPOINT:}
   edition: ${AIRBYTE_EDITION:COMMUNITY}
   internal-api:
-    auth-header:
-      name: ${AIRBYTE_API_AUTH_HEADER_NAME:X-Endpoint-API-UserInfo}
-      value: ${AIRBYTE_API_AUTH_HEADER_VALUE:eyJ1c2VyX2lkIjogImNsb3VkLWFwaSIsICJlbWFpbF92ZXJpZmllZCI6ICJ0cnVlIn0K}
-    keycloak-auth-client:
-      secret-name: ${KEYCLOAK_AUTH_CLIENT_SECRET_NAME:}
-      secret-key: ${KEYCLOAK_AUTH_CLIENT_SECRET_KEY:}
     base-path: ${INTERNAL_API_HOST}/api
     connect-timeout-seconds: ${AIRBYTE_API_CONNECT_TIMEOUT_SECONDS:30}
     read-timeout-seconds: ${AIRBYTE_API_READ_TIMEOUT_SECONDS:600}
     retries:
       delay-seconds: ${AIRBYTE_API_RETRY_DELAY_SECONDS:2}
       max: ${AIRBYTE_API_MAX_RETRIES:5}
-  acceptance.test.enabled: ${ACCEPTANCE_TEST_ENABLED:false}
-  role: ${AIRBYTE_ROLE:dev}
+    auth:
+      type: INTERNAL_CLIENT_TOKEN
+      signature-secret: ${AB_JWT_SIGNATURE_SECRET:}
+  acceptance-test-enabled: ${ACCEPTANCE_TEST_ENABLED:false}
+  temporal:
+    cloud:
+      client:
+        cert: ${TEMPORAL_CLOUD_CLIENT_CERT:}
+        key: ${TEMPORAL_CLOUD_CLIENT_KEY:}
+      enabled: ${TEMPORAL_CLOUD_ENABLED:false}
+      host: ${TEMPORAL_CLOUD_HOST:}
+      namespace: ${TEMPORAL_CLOUD_NAMESPACE:}
+    host: ${TEMPORAL_HOST:`localhost:7233`}
+    retention: ${TEMPORAL_HISTORY_RETENTION_IN_DAYS:30}
+    sdk:
+      timeouts:
+        rpc-timeout: ${TEMPORAL_SDK_RPC_TIMEOUT:60s}
+        rpc-long-poll-timeout: ${TEMPORAL_SDK_RPC_LONG_POLL_TIMEOUT:70s}
+        rpc-query-timeout: ${TEMPORAL_SDK_RPC_QUERY_TIMEOUT:10s}
 
-temporal:
-  cloud:
-    client:
-      cert: ${TEMPORAL_CLOUD_CLIENT_CERT:}
-      key: ${TEMPORAL_CLOUD_CLIENT_KEY:}
-    enabled: ${TEMPORAL_CLOUD_ENABLED:false}
-    host: ${TEMPORAL_CLOUD_HOST:}
-    namespace: ${TEMPORAL_CLOUD_NAMESPACE:}
-  host: ${TEMPORAL_HOST:`localhost:7233`}
-  retention: ${TEMPORAL_HISTORY_RETENTION_IN_DAYS:30}
-  sdk:
-    timeouts:
-      rpc-timeout: ${TEMPORAL_SDK_RPC_TIMEOUT:60s}
-      rpc-long-poll-timeout: ${TEMPORAL_SDK_RPC_LONG_POLL_TIMEOUT:70s}
-      rpc-query-timeout: ${TEMPORAL_SDK_RPC_QUERY_TIMEOUT:10s}
+endpoints:
+  all:
+    enabled: false
+    port: 8085
 
 jackson:
   mapper:

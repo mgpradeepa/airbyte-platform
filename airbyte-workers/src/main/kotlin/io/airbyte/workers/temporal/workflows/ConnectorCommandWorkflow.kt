@@ -8,13 +8,19 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import datadog.trace.api.Trace
 import io.airbyte.commons.json.Jsons
 import io.airbyte.commons.temporal.annotations.TemporalActivityStub
+import io.airbyte.commons.temporal.scheduling.CheckCommandApiInput
 import io.airbyte.commons.temporal.scheduling.CheckCommandInput
 import io.airbyte.commons.temporal.scheduling.ConnectorCommandInput
 import io.airbyte.commons.temporal.scheduling.ConnectorCommandWorkflow
+import io.airbyte.commons.temporal.scheduling.DiscoverCommandApiInput
 import io.airbyte.commons.temporal.scheduling.DiscoverCommandInput
+import io.airbyte.commons.temporal.scheduling.ReplicationCommandApiInput
+import io.airbyte.commons.temporal.scheduling.SpecCommandApiInput
 import io.airbyte.commons.temporal.scheduling.SpecCommandInput
 import io.airbyte.commons.timer.Stopwatch
 import io.airbyte.config.ConnectorJobOutput
+import io.airbyte.config.FailureReason
+import io.airbyte.config.Metadata
 import io.airbyte.config.SignalInput
 import io.airbyte.metrics.MetricAttribute
 import io.airbyte.metrics.MetricClient
@@ -24,21 +30,32 @@ import io.airbyte.metrics.lib.ApmTraceConstants.Tags
 import io.airbyte.metrics.lib.ApmTraceUtils
 import io.airbyte.metrics.lib.MetricTags
 import io.airbyte.workers.commands.CheckCommand
+import io.airbyte.workers.commands.CheckCommandV2
 import io.airbyte.workers.commands.ConnectorCommand
 import io.airbyte.workers.commands.DiscoverCommand
+import io.airbyte.workers.commands.DiscoverCommandV2
+import io.airbyte.workers.commands.ReplicationCommand
 import io.airbyte.workers.commands.SpecCommand
+import io.airbyte.workers.commands.SpecCommandV2
+import io.airbyte.workers.models.CheckConnectionApiInput
 import io.airbyte.workers.models.CheckConnectionInput
 import io.airbyte.workers.models.DiscoverCatalogInput
+import io.airbyte.workers.models.DiscoverSourceApiInput
+import io.airbyte.workers.models.ReplicationApiInput
+import io.airbyte.workers.models.SpecApiInput
 import io.airbyte.workers.models.SpecInput
+import io.airbyte.workers.workload.WorkspaceNotFoundException
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.temporal.activity.Activity
 import io.temporal.activity.ActivityExecutionContext
 import io.temporal.activity.ActivityInterface
 import io.temporal.activity.ActivityMethod
 import io.temporal.failure.ActivityFailure
+import io.temporal.failure.ApplicationFailure
 import io.temporal.failure.CanceledFailure
 import io.temporal.workflow.Workflow
 import jakarta.inject.Singleton
+import java.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.toJavaDuration
 
@@ -86,6 +103,9 @@ interface ConnectorCommandActivity {
 
   @ActivityMethod
   fun cancelCommand(activityInput: ConnectorCommandActivityInput)
+
+  @ActivityMethod
+  fun getAwaitDuration(activityInput: ConnectorCommandActivityInput): Duration
 }
 
 /**
@@ -99,8 +119,12 @@ class ActivityExecutionContextProvider {
 @Singleton
 class ConnectorCommandActivityImpl(
   private val checkCommand: CheckCommand,
+  private val checkCommandApi: CheckCommandV2,
   private val discoverCommand: DiscoverCommand,
+  private val discoverCommandApi: DiscoverCommandV2,
   private val specCommand: SpecCommand,
+  private val specCommandApi: SpecCommandV2,
+  private val replicationCommandApi: ReplicationCommand,
   private val activityExecutionContextProvider: ActivityExecutionContextProvider,
   private val metricClient: MetricClient,
 ) : ConnectorCommandActivity {
@@ -108,10 +132,20 @@ class ConnectorCommandActivityImpl(
     fun CheckCommandInput.CheckConnectionInput.toWorkerModels(): CheckConnectionInput =
       CheckConnectionInput(jobRunConfig, integrationLauncherConfig, checkConnectionInput)
 
+    fun CheckCommandApiInput.CheckConnectionApiInput.toWorkerModels(): CheckConnectionApiInput = CheckConnectionApiInput(actorId, jobId, attemptId)
+
     fun DiscoverCommandInput.DiscoverCatalogInput.toWorkerModels(): DiscoverCatalogInput =
       DiscoverCatalogInput(jobRunConfig, integrationLauncherConfig, discoverCatalogInput)
 
+    fun DiscoverCommandApiInput.DiscoverApiInput.toWorkerModels(): DiscoverSourceApiInput = DiscoverSourceApiInput(actorId, jobId, attemptNumber)
+
     fun SpecCommandInput.SpecInput.toWorkerModels(): SpecInput = SpecInput(jobRunConfig, integrationLauncherConfig)
+
+    fun SpecCommandApiInput.SpecApiInput.toWorkerModels(): SpecApiInput =
+      SpecApiInput(requestId, commandId, actorDefinitionId, dockerImage, dockerImageTag, workspaceId)
+
+    fun ReplicationCommandApiInput.ReplicationApiInput.toWorkerModels(): ReplicationApiInput =
+      ReplicationApiInput(connectionId, jobId, attemptId, appliedCatalogDiff)
 
     val logger = KotlinLogging.logger {}
   }
@@ -123,6 +157,10 @@ class ConnectorCommandActivityImpl(
         is CheckCommandInput -> checkCommand.start(activityInput.input.input.toWorkerModels(), activityInput.signalPayload)
         is DiscoverCommandInput -> discoverCommand.start(activityInput.input.input.toWorkerModels(), activityInput.signalPayload)
         is SpecCommandInput -> specCommand.start(activityInput.input.input.toWorkerModels(), activityInput.signalPayload)
+        is SpecCommandApiInput -> specCommandApi.start(activityInput.input.input.toWorkerModels(), activityInput.signalPayload)
+        is CheckCommandApiInput -> checkCommandApi.start(activityInput.input.input.toWorkerModels(), activityInput.signalPayload)
+        is DiscoverCommandApiInput -> discoverCommandApi.start(activityInput.input.input.toWorkerModels(), activityInput.signalPayload)
+        is ReplicationCommandApiInput -> replicationCommandApi.start(activityInput.input.input.toWorkerModels(), activityInput.signalPayload)
       }
     }
 
@@ -144,6 +182,9 @@ class ConnectorCommandActivityImpl(
       getCommand(activityInput.input).cancel(id = activityInput.id ?: throw IllegalStateException("id must exist"))
     }
   }
+
+  override fun getAwaitDuration(activityInput: ConnectorCommandActivityInput): Duration =
+    getCommand(activityInput.input).getAwaitDuration().toJavaDuration()
 
   private fun <T> withInstrumentation(
     activityInput: ConnectorCommandActivityInput,
@@ -205,6 +246,10 @@ class ConnectorCommandActivityImpl(
       is CheckCommandInput -> checkCommand
       is DiscoverCommandInput -> discoverCommand
       is SpecCommandInput -> specCommand
+      is SpecCommandApiInput -> specCommandApi
+      is CheckCommandApiInput -> checkCommandApi
+      is DiscoverCommandApiInput -> discoverCommandApi
+      is ReplicationCommandApiInput -> replicationCommandApi
     }
 }
 
@@ -227,18 +272,39 @@ open class ConnectorCommandWorkflowImpl : ConnectorCommandWorkflow {
         id = null,
         startTimeInMillis = System.currentTimeMillis(),
       )
-    val id = connectorCommandActivity.startCommand(activityInput)
-    activityInput = activityInput.copy(id = id)
+
+    // Versioning for a smoother that doesn't fail all ongoing commands upon release.
+    val useAwaitFromCommand = Workflow.getVersion("useAwaitFromCommand", Workflow.DEFAULT_VERSION, 1)
+    // We look up the await duration at the beginning of the workflow so that we can freely change the awaitDuration of a command
+    // without impacting already running workflows. This way, they don't NonDeterministicException and get to finish on their initial config.
+    val awaitDuration =
+      if (useAwaitFromCommand == Workflow.DEFAULT_VERSION) {
+        1.minutes.toJavaDuration()
+      } else {
+        connectorCommandActivity.getAwaitDuration(activityInput)
+      }
 
     try {
+      val id = connectorCommandActivity.startCommand(activityInput)
+      activityInput = activityInput.copy(id = id)
+
       shouldBlock = !connectorCommandActivity.isCommandTerminal(activityInput)
       while (shouldBlock) {
-        Workflow.await(1.minutes.toJavaDuration()) { !shouldBlock }
+        Workflow.await(awaitDuration) { !shouldBlock }
         shouldBlock = !connectorCommandActivity.isCommandTerminal(activityInput)
       }
-    } catch (e: Exception) {
-      when (e) {
-        is CanceledFailure, is ActivityFailure -> {
+
+      return connectorCommandActivity.getCommandOutput(activityInput)
+    } catch (e: ActivityFailure) {
+      // Check if the underlying cause is WorkspaceNotFoundException
+      if (isWorkspaceNotFoundException(e)) {
+        // Return structured output instead of failing the workflow
+        return createWorkspaceNotFoundOutput(input, e)
+      }
+
+      // Handle other activity failures (cancellation, etc.)
+      when (e.cause) {
+        is CanceledFailure -> {
           val detachedCancellationScope =
             Workflow.newDetachedCancellationScope {
               connectorCommandActivity.cancelCommand(activityInput)
@@ -246,10 +312,60 @@ open class ConnectorCommandWorkflowImpl : ConnectorCommandWorkflow {
             }
           detachedCancellationScope.run()
         }
-        else -> throw e
       }
+      throw e
+    }
+  }
+
+  /**
+   * Check if the exception chain contains a WorkspaceNotFoundException.
+   * Temporal wraps exceptions, so we need to check the cause chain.
+   */
+  private fun isWorkspaceNotFoundException(throwable: Throwable?): Boolean {
+    if (throwable == null) return false
+    if (throwable is WorkspaceNotFoundException) return true
+
+    // Check the cause chain
+    var current: Throwable? = throwable.cause
+    while (current != null) {
+      if (current is WorkspaceNotFoundException) return true
+
+      // Check if it's an ApplicationFailure with WorkspaceNotFoundException type
+      // (Temporal serializes exceptions across activity boundaries)
+      if (current is ApplicationFailure && current.type == WorkspaceNotFoundException::class.java.name) {
+        return true
+      }
+
+      current = current.cause
     }
 
-    return connectorCommandActivity.getCommandOutput(activityInput)
+    return false
+  }
+
+  /**
+   * Create a structured failure output for workspace not found errors.
+   * This provides explicit, programmatic error information to workflow consumers.
+   */
+  private fun createWorkspaceNotFoundOutput(
+    input: ConnectorCommandInput,
+    activityFailure: ActivityFailure,
+  ): ConnectorJobOutput {
+    val failureReason =
+      FailureReason()
+        .withFailureOrigin(FailureReason.FailureOrigin.AIRBYTE_PLATFORM)
+        .withFailureType(FailureReason.FailureType.SYSTEM_ERROR)
+        .withInternalMessage(activityFailure.cause?.message ?: "Workspace not found")
+        .withExternalMessage("The workspace for this operation no longer exists. It may have been deleted.")
+        .withRetryable(false)
+        .withTimestamp(System.currentTimeMillis())
+        .withStacktrace(activityFailure.stackTraceToString())
+        .withMetadata(
+          Metadata()
+            .withAdditionalProperty("errorCode", "WORKSPACE_NOT_FOUND")
+            .withAdditionalProperty("workflowType", input.type),
+        )
+
+    return ConnectorJobOutput()
+      .withFailureReason(failureReason)
   }
 }

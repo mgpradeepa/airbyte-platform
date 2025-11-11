@@ -48,7 +48,6 @@ import org.junit.jupiter.params.provider.MethodSource
 import org.junit.jupiter.params.provider.ValueSource
 import java.util.Optional
 import java.util.UUID
-import java.util.stream.Stream
 
 internal class ActorDefinitionVersionUpdaterTest {
   private val connectionService = mockk<ConnectionService>()
@@ -82,7 +81,7 @@ internal class ActorDefinitionVersionUpdaterTest {
 
     val STREAM_SCOPED_BREAKING_CHANGE: ActorDefinitionBreakingChange =
       MockData
-        .actorDefinitionBreakingChange(NEW_VERSION.dockerImageTag)
+        .actorDefinitionBreakingChange(NEW_VERSION.dockerImageTag)!!
         .withActorDefinitionId(ACTOR_DEFINITION_ID)
         .withScopedImpact(
           listOf(
@@ -91,8 +90,8 @@ internal class ActorDefinitionVersionUpdaterTest {
         )
 
     @JvmStatic
-    fun getBreakingChangesForUpgradeMethodSource(): Stream<Arguments> =
-      Stream.of(
+    fun getBreakingChangesForUpgradeMethodSource() =
+      listOf(
         // Version increases
         Arguments.of("0.0.1", "2.0.0", listOf("1.0.0", "2.0.0")),
         Arguments.of("1.0.0", "1.0.1", listOf<String>()),
@@ -439,7 +438,7 @@ internal class ActorDefinitionVersionUpdaterTest {
 
     val currentVersion = DEFAULT_VERSION
     val limitedScopeBreakingChange = STREAM_SCOPED_BREAKING_CHANGE
-    val breakingChange = MockData.actorDefinitionBreakingChange("3.0.0")
+    val breakingChange = MockData.actorDefinitionBreakingChange("3.0.0")!!
     val breakingChangesForUpgrade = listOf(limitedScopeBreakingChange, breakingChange)
 
     every {
@@ -809,9 +808,9 @@ internal class ActorDefinitionVersionUpdaterTest {
   ) {
     val breakingChanges =
       listOf(
-        MockData.actorDefinitionBreakingChange("1.0.0"),
-        MockData.actorDefinitionBreakingChange("2.0.0"),
-        MockData.actorDefinitionBreakingChange("3.0.0"),
+        MockData.actorDefinitionBreakingChange("1.0.0")!!,
+        MockData.actorDefinitionBreakingChange("2.0.0")!!,
+        MockData.actorDefinitionBreakingChange("3.0.0")!!,
       )
 
     val actualBreakingChanges =
@@ -838,9 +837,9 @@ internal class ActorDefinitionVersionUpdaterTest {
 
   @Test
   fun testProcessBreakingChangePinRollbacks() {
-    val oldBC = MockData.actorDefinitionBreakingChange("1.0.0")
-    val currentVersionBC = MockData.actorDefinitionBreakingChange("2.0.0")
-    val rolledBackBC = MockData.actorDefinitionBreakingChange("3.0.0")
+    val oldBC = MockData.actorDefinitionBreakingChange("1.0.0")!!
+    val currentVersionBC = MockData.actorDefinitionBreakingChange("2.0.0")!!
+    val rolledBackBC = MockData.actorDefinitionBreakingChange("3.0.0")!!
 
     val allBreakingChanges = listOf(oldBC, currentVersionBC, rolledBackBC)
     val idsPinnedForV3 = listOf(UUID.randomUUID(), UUID.randomUUID())
@@ -874,8 +873,8 @@ internal class ActorDefinitionVersionUpdaterTest {
   fun testProcessBreakingChangePinRollbacksWithNoBCsToRollBack() {
     val breakingChanges =
       listOf(
-        MockData.actorDefinitionBreakingChange("1.0.0"),
-        MockData.actorDefinitionBreakingChange("2.0.0"),
+        MockData.actorDefinitionBreakingChange("1.0.0")!!,
+        MockData.actorDefinitionBreakingChange("2.0.0")!!,
       )
 
     actorDefinitionVersionUpdater.processBreakingChangePinRollbacks(ACTOR_DEFINITION_ID, NEW_VERSION, breakingChanges)

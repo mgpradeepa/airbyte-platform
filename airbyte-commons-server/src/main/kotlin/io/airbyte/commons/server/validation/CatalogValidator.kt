@@ -4,8 +4,8 @@
 
 package io.airbyte.commons.server.validation
 
-import com.google.common.collect.Iterators
 import io.airbyte.api.model.generated.AirbyteCatalog
+import io.airbyte.commons.server.runtime.AirbyteServerConfiguration
 import io.airbyte.commons.server.validation.CatalogValidator.Constants.FIELD_COUNT_LIMIT_KEY
 import io.airbyte.commons.server.validation.CatalogValidator.Constants.FIELD_COUNT_PROVIDED_KEY
 import io.airbyte.commons.server.validation.CatalogValidator.Constants.PROPERTIES_KEY
@@ -15,7 +15,6 @@ import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.metrics.MetricAttribute
 import io.airbyte.metrics.MetricClient
 import io.airbyte.metrics.OssMetricsRegistry
-import io.micronaut.context.annotation.Value
 import jakarta.inject.Singleton
 
 /**
@@ -23,7 +22,7 @@ import jakarta.inject.Singleton
  */
 @Singleton
 class CatalogValidator(
-  @Value("\${airbyte.server.connection.limits.max-fields-per-connection}") private val maxFieldLimit: Int,
+  private val airbyteServerConfiguration: AirbyteServerConfiguration,
   private val metricClient: MetricClient,
   private val featureFlagClient: FeatureFlagClient,
 ) {
@@ -47,7 +46,7 @@ class CatalogValidator(
               } else {
                 emptyList<String>().iterator()
               }
-            Iterators.size(fieldNames)
+            fieldNames.asSequence().count()
           }
         }
 
@@ -56,7 +55,11 @@ class CatalogValidator(
     metricClient.distribution(
       OssMetricsRegistry.EXCESSIVE_CATALOG_SIZE,
       fieldCount.toDouble(),
-      MetricAttribute(FIELD_COUNT_LIMIT_KEY, maxFieldLimit.toString()),
+      MetricAttribute(
+        FIELD_COUNT_LIMIT_KEY,
+        airbyteServerConfiguration.connectionLimits.limits.maxFieldsPerConnection
+          .toString(),
+      ),
       MetricAttribute(FIELD_COUNT_PROVIDED_KEY, fieldCount.toString()),
     )
 
@@ -72,7 +75,8 @@ class CatalogValidator(
     return if (override > 0) {
       override
     } else {
-      maxFieldLimit
+      airbyteServerConfiguration.connectionLimits.limits.maxFieldsPerConnection
+        .toInt()
     }
   }
 

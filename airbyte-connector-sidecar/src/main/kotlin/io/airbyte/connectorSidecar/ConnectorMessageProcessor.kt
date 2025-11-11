@@ -5,32 +5,39 @@
 package io.airbyte.connectorSidecar
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.google.common.annotations.VisibleForTesting
 import io.airbyte.api.client.AirbyteApiClient
+import io.airbyte.api.client.model.generated.DestinationDiscoverSchemaWriteRequestBody
 import io.airbyte.api.client.model.generated.SourceDiscoverSchemaWriteRequestBody
+import io.airbyte.commons.annotation.InternalForTesting
 import io.airbyte.commons.converters.CatalogClientConverters
 import io.airbyte.commons.converters.ConnectorConfigUpdater
-import io.airbyte.commons.enums.Enums
+import io.airbyte.commons.converters.toClientApi
+import io.airbyte.commons.enums.convertTo
 import io.airbyte.commons.io.IOs
 import io.airbyte.commons.json.Jsons
+import io.airbyte.commons.logging.LogSource
 import io.airbyte.config.ActorType
 import io.airbyte.config.ConnectorJobOutput
 import io.airbyte.config.FailureReason
 import io.airbyte.config.StandardCheckConnectionInput
 import io.airbyte.config.StandardCheckConnectionOutput
 import io.airbyte.config.StandardDiscoverCatalogInput
-import io.airbyte.protocol.models.AirbyteCatalog
-import io.airbyte.protocol.models.AirbyteConnectionStatus
-import io.airbyte.protocol.models.AirbyteMessage
-import io.airbyte.protocol.models.AirbyteTraceMessage
-import io.airbyte.protocol.models.ConnectorSpecification
+import io.airbyte.protocol.models.v0.AirbyteCatalog
+import io.airbyte.protocol.models.v0.AirbyteConnectionStatus
+import io.airbyte.protocol.models.v0.AirbyteMessage
+import io.airbyte.protocol.models.v0.AirbyteTraceMessage
+import io.airbyte.protocol.models.v0.ConnectorSpecification
+import io.airbyte.protocol.models.v0.DestinationCatalog
 import io.airbyte.workers.WorkerUtils
 import io.airbyte.workers.exception.WorkerException
 import io.airbyte.workers.helper.FailureHelper
 import io.airbyte.workers.helper.FailureHelper.ConnectorCommand
 import io.airbyte.workers.internal.AirbyteStreamFactory
+import io.airbyte.workers.internal.MessageOrigin
+import io.airbyte.workers.models.SidecarInput
 import io.airbyte.workers.models.SidecarInput.OperationType
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.github.oshai.kotlinlogging.withLoggingContext
 import jakarta.inject.Singleton
 import java.io.IOException
 import java.io.InputStream
@@ -46,10 +53,13 @@ class ConnectorMessageProcessor(
   private val connectorConfigUpdater: ConnectorConfigUpdater,
   private val airbyteApiClient: AirbyteApiClient,
   private val catalogClientConverters: CatalogClientConverters,
+  private val logContextFactory: SidecarLogContextFactory,
+  private val sidecarInput: SidecarInput,
 ) {
   data class OperationResult(
     val connectionStatus: AirbyteConnectionStatus? = null,
     val catalog: AirbyteCatalog? = null,
+    val destinationCatalog: DestinationCatalog? = null,
     val spec: ConnectorSpecification? = null,
   )
 
@@ -67,7 +77,15 @@ class ConnectorMessageProcessor(
   ): ConnectorJobOutput {
     try {
       val jobOutput: ConnectorJobOutput = createBaseOutput(operationType)
-      val messagesByType: Map<AirbyteMessage.Type, List<AirbyteMessage>> = getMessagesByType(inputStream, streamFactory)
+      val messagesByType: Map<AirbyteMessage.Type, List<AirbyteMessage>> =
+        withLoggingContext(logContextFactory.createConnectorContext(sidecarInput.logPath)) {
+          getMessagesByType(
+            inputStream,
+            streamFactory,
+            if (logContextFactory.inferLogSource() == LogSource.DESTINATION) MessageOrigin.DESTINATION else MessageOrigin.SOURCE,
+          )
+        }
+
       val result =
         when (operationType) {
           OperationType.CHECK -> getConnectionStatus(messagesByType)
@@ -139,7 +157,7 @@ class ConnectorMessageProcessor(
     }
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   fun setOutput(
     operationType: OperationType,
     result: OperationResult,
@@ -153,7 +171,7 @@ class ConnectorMessageProcessor(
         if (result.connectionStatus != null) {
           val output =
             StandardCheckConnectionOutput()
-              .withStatus(Enums.convertTo(result.connectionStatus.status, StandardCheckConnectionOutput.Status::class.java))
+              .withStatus(result.connectionStatus.status.convertTo<StandardCheckConnectionOutput.Status>())
               .withMessage(result.connectionStatus.message)
           jobOutput.checkConnection = output
         } else if (failureReason.isEmpty && exitCode == 0) {
@@ -176,16 +194,34 @@ class ConnectorMessageProcessor(
 
       OperationType.DISCOVER ->
         if (result.catalog != null && input.discoveryInput != null) {
+          // If a CATALOG is present for discover, this is a SOURCE discover
           logger.info { "Writing catalog result to API..." }
           val apiResult =
             airbyteApiClient.sourceApi
               .writeDiscoverCatalogResult(buildSourceDiscoverSchemaWriteRequestBody(input.discoveryInput, result.catalog))
           logger.info { "Finished writing catalog result to API." }
           jobOutput.discoverCatalogId = apiResult.catalogId
+        } else if (result.destinationCatalog != null && input.discoveryInput != null) {
+          // If a DESTINATION_CATALOG is present for discover, this is a DESTINATION discover
+          logger.info { "Writing destination catalog result to API..." }
+          val apiResult =
+            airbyteApiClient.destinationApi
+              .writeDestinationDiscoverCatalogResult(buildDestinationDiscoverSchemaWriteRequestBody(input.discoveryInput, result.destinationCatalog))
+          logger.info { "Finished writing destination catalog result to API." }
+          jobOutput.discoverCatalogId = apiResult.catalogId
         } else if (failureReason.isEmpty && exitCode == 0) {
           throw WorkerException("Connector exited successfully without an output for $operationType.")
         } else if (exitCode != 0) {
-          jobOutput.failureReason = failureReason.orElse(getFailureReasonForNon0ExitCode(operationType, exitCode, FailureReason.FailureOrigin.SOURCE))
+          jobOutput.failureReason =
+            failureReason.orElse(
+              getFailureReasonForNon0ExitCode(
+                operationType,
+                exitCode,
+                // FIXME: We're assuming SOURCE as the default failure origin when neither catalog is present
+                // To fix this, we should pass in an actorType as part of the input
+                if (result.destinationCatalog != null) FailureReason.FailureOrigin.DESTINATION else FailureReason.FailureOrigin.SOURCE,
+              ),
+            )
         }
 
       OperationType.SPEC ->
@@ -221,7 +257,19 @@ class ConnectorMessageProcessor(
       configurationHash = discoverSchemaInput.configHash,
     )
 
-  @VisibleForTesting
+  private fun buildDestinationDiscoverSchemaWriteRequestBody(
+    discoverSchemaInput: StandardDiscoverCatalogInput,
+    catalog: DestinationCatalog,
+  ): DestinationDiscoverSchemaWriteRequestBody =
+    DestinationDiscoverSchemaWriteRequestBody(
+      catalog = catalog.toClientApi(),
+      // FIXME: the input has this set as sourceId atm
+      destinationId = if (discoverSchemaInput.sourceId == null) null else UUID.fromString(discoverSchemaInput.sourceId),
+      connectorVersion = discoverSchemaInput.connectorVersion ?: "",
+      configurationHash = discoverSchemaInput.configHash,
+    )
+
+  @InternalForTesting
   fun updateConfigFromControlMessage(
     actorId: UUID?,
     actorType: ActorType,
@@ -276,6 +324,13 @@ class ConnectorMessageProcessor(
             .map { obj: AirbyteMessage -> obj.catalog }
             .findFirst()
             .orElse(null),
+        destinationCatalog =
+          messagesByType
+            .getOrDefault(AirbyteMessage.Type.DESTINATION_CATALOG, ArrayList())
+            .stream()
+            .map { obj: AirbyteMessage -> obj.destinationCatalog }
+            .findFirst()
+            .orElse(null),
       )
 
     fun getSpecResult(messagesByType: Map<AirbyteMessage.Type, List<AirbyteMessage>>): OperationResult =
@@ -315,14 +370,16 @@ class ConnectorMessageProcessor(
         ConnectorJobOutput.OutputType.SPEC -> ConnectorCommand.SPEC
         ConnectorJobOutput.OutputType.CHECK_CONNECTION -> ConnectorCommand.CHECK
         ConnectorJobOutput.OutputType.DISCOVER_CATALOG_ID -> ConnectorCommand.DISCOVER
+        ConnectorJobOutput.OutputType.REPLICATE -> throw IllegalStateException("Cannot get connector command from output type $outputType")
       }
 
     fun getMessagesByType(
       inputStream: InputStream,
       streamFactory: AirbyteStreamFactory,
+      origin: MessageOrigin,
     ): Map<AirbyteMessage.Type, List<AirbyteMessage>> =
       streamFactory
-        .create(IOs.newBufferedReader(inputStream))
+        .create(IOs.newBufferedReader(inputStream), origin)
         .collect(Collectors.groupingBy { it.type })
   }
 }

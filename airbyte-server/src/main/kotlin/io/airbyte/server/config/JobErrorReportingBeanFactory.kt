@@ -4,20 +4,23 @@
 
 package io.airbyte.server.config
 
-import io.airbyte.config.Configs.AirbyteEdition
+import io.airbyte.api.client.WebUrlHelper
 import io.airbyte.data.services.ActorDefinitionService
 import io.airbyte.data.services.DestinationService
 import io.airbyte.data.services.SourceService
 import io.airbyte.data.services.WorkspaceService
-import io.airbyte.persistence.job.WebUrlHelper
+import io.airbyte.metrics.MetricClient
+import io.airbyte.micronaut.runtime.AirbyteConfig
+import io.airbyte.micronaut.runtime.AirbyteWorkerConfig
 import io.airbyte.persistence.job.errorreporter.JobErrorReporter
 import io.airbyte.persistence.job.errorreporter.JobErrorReportingClient
 import io.airbyte.persistence.job.errorreporter.LoggingJobErrorReportingClient
 import io.airbyte.persistence.job.errorreporter.SentryExceptionHelper
 import io.airbyte.persistence.job.errorreporter.SentryJobErrorReportingClient
+import io.airbyte.persistence.job.errorreporter.SentryJobErrorReportingClient.Companion.createSentryHubWithDSN
+import io.airbyte.server.services.JobObservabilityReportingService
 import io.micronaut.context.annotation.Factory
 import io.micronaut.context.annotation.Requires
-import io.micronaut.context.annotation.Value
 import jakarta.inject.Named
 import jakarta.inject.Singleton
 import java.util.Optional
@@ -30,9 +33,8 @@ class JobErrorReportingBeanFactory {
   @Singleton
   @Requires(property = "airbyte.worker.job.error-reporting.strategy", pattern = "(?i)^sentry$")
   @Named("jobErrorReportingClient")
-  fun sentryJobErrorReportingClient(
-    @Value("\${airbyte.worker.job.error-reporting.sentry.dsn}") sentryDsn: String?,
-  ): JobErrorReportingClient = SentryJobErrorReportingClient(sentryDsn, SentryExceptionHelper())
+  fun sentryJobErrorReportingClient(airbyteWorkerConfig: AirbyteWorkerConfig): JobErrorReportingClient =
+    SentryJobErrorReportingClient(airbyteWorkerConfig.job.errorReporting.sentry.dsn, SentryExceptionHelper())
 
   @Singleton
   @Requires(property = "airbyte.worker.job.error-reporting.strategy", pattern = "(?i)^logging$")
@@ -41,23 +43,29 @@ class JobErrorReportingBeanFactory {
 
   @Singleton
   fun jobErrorReporter(
-    @Value("\${airbyte.version}") airbyteVersion: String?,
-    actorDefinitionService: ActorDefinitionService?,
-    sourceService: SourceService?,
-    destinationService: DestinationService?,
-    workspaceService: WorkspaceService?,
-    airbyteEdition: AirbyteEdition?,
+    airbyteConfig: AirbyteConfig,
+    actorDefinitionService: ActorDefinitionService,
+    sourceService: SourceService,
+    destinationService: DestinationService,
+    workspaceService: WorkspaceService,
     @Named("jobErrorReportingClient") jobErrorReportingClient: Optional<JobErrorReportingClient>,
-    webUrlHelper: WebUrlHelper?,
+    webUrlHelper: WebUrlHelper,
+    metricClient: MetricClient,
   ): JobErrorReporter =
     JobErrorReporter(
       actorDefinitionService,
       sourceService,
       destinationService,
       workspaceService,
-      airbyteEdition,
-      airbyteVersion,
+      airbyteConfig.edition,
+      airbyteConfig.version,
       webUrlHelper,
       jobErrorReportingClient.orElseGet { LoggingJobErrorReportingClient() },
+      metricClient,
     )
+
+  @Singleton
+  @Requires(property = "airbyte.worker.job.error-reporting.strategy", pattern = "(?i)^sentry$")
+  fun jobObservabilityReportingService(airbyteWorkerConfig: AirbyteWorkerConfig): JobObservabilityReportingService =
+    JobObservabilityReportingService(createSentryHubWithDSN(airbyteWorkerConfig.job.errorReporting.sentry.dsn))
 }

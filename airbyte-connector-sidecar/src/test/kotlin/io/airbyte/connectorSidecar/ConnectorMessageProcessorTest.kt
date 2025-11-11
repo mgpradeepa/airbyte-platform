@@ -6,6 +6,7 @@ package io.airbyte.connectorSidecar
 
 import com.fasterxml.jackson.databind.JsonNode
 import io.airbyte.api.client.AirbyteApiClient
+import io.airbyte.api.client.generated.DestinationApi
 import io.airbyte.api.client.generated.SourceApi
 import io.airbyte.api.client.model.generated.DiscoverCatalogResult
 import io.airbyte.commons.converters.CatalogClientConverters
@@ -18,20 +19,25 @@ import io.airbyte.config.StandardCheckConnectionInput
 import io.airbyte.config.StandardCheckConnectionOutput
 import io.airbyte.config.StandardDiscoverCatalogInput
 import io.airbyte.config.helpers.FieldGenerator
-import io.airbyte.protocol.models.AirbyteCatalog
-import io.airbyte.protocol.models.AirbyteConnectionStatus
-import io.airbyte.protocol.models.AirbyteControlConnectorConfigMessage
-import io.airbyte.protocol.models.AirbyteControlMessage
-import io.airbyte.protocol.models.AirbyteMessage
-import io.airbyte.protocol.models.AirbyteStream
-import io.airbyte.protocol.models.AirbyteTraceMessage
-import io.airbyte.protocol.models.Config
-import io.airbyte.protocol.models.ConnectorSpecification
+import io.airbyte.protocol.models.v0.AirbyteCatalog
+import io.airbyte.protocol.models.v0.AirbyteConnectionStatus
+import io.airbyte.protocol.models.v0.AirbyteControlConnectorConfigMessage
+import io.airbyte.protocol.models.v0.AirbyteControlMessage
+import io.airbyte.protocol.models.v0.AirbyteMessage
+import io.airbyte.protocol.models.v0.AirbyteStream
+import io.airbyte.protocol.models.v0.AirbyteTraceMessage
+import io.airbyte.protocol.models.v0.Config
+import io.airbyte.protocol.models.v0.ConnectorSpecification
+import io.airbyte.protocol.models.v0.DestinationCatalog
+import io.airbyte.protocol.models.v0.DestinationOperation
+import io.airbyte.protocol.models.v0.DestinationSyncMode
 import io.airbyte.workers.internal.AirbyteStreamFactory
+import io.airbyte.workers.internal.MessageOrigin
 import io.airbyte.workers.models.SidecarInput
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
 import io.mockk.junit5.MockKExtension
+import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -62,6 +68,9 @@ class ConnectorMessageProcessorTest {
   @MockK
   private lateinit var sourceApi: SourceApi
 
+  @MockK
+  private lateinit var destinationApi: DestinationApi
+
   private lateinit var connectorMessageProcessor: ConnectorMessageProcessor
 
   private val catalogClientConverters = CatalogClientConverters(FieldGenerator())
@@ -69,19 +78,21 @@ class ConnectorMessageProcessorTest {
   @BeforeEach
   fun init() {
     every { airbyteApiClient.sourceApi } returns sourceApi
-    connectorMessageProcessor = ConnectorMessageProcessor(connectorConfigUpdater, airbyteApiClient, catalogClientConverters)
+    every { airbyteApiClient.destinationApi } returns destinationApi
+    connectorMessageProcessor =
+      ConnectorMessageProcessor(connectorConfigUpdater, airbyteApiClient, catalogClientConverters, mockk(relaxed = true), mockk(relaxed = true))
   }
 
   @Test
   fun `test that message are properly aggregated by type`() {
-    every { streamFactory.create(any()) } returns
-      Stream.of(
+    every { streamFactory.create(any(), any()) } returns
+      listOf(
         AirbyteMessage().withType(AirbyteMessage.Type.CONTROL).withAdditionalProperty("control", "one"),
         AirbyteMessage().withType(AirbyteMessage.Type.RECORD).withAdditionalProperty("record", "two"),
         AirbyteMessage().withType(AirbyteMessage.Type.RECORD).withAdditionalProperty("record", "three"),
-      )
+      ).stream()
 
-    val messageByType = ConnectorMessageProcessor.getMessagesByType(InputStream.nullInputStream(), streamFactory)
+    val messageByType = ConnectorMessageProcessor.getMessagesByType(InputStream.nullInputStream(), streamFactory, MessageOrigin.SOURCE)
 
     assertEquals(2, messageByType.size)
     assertEquals(1, messageByType[AirbyteMessage.Type.CONTROL]!!.size)
@@ -374,7 +385,7 @@ class ConnectorMessageProcessorTest {
 
   @Test
   fun `fail if non 0 exit code`() {
-    every { streamFactory.create(any()) } returns Stream.of()
+    every { streamFactory.create(any(), any()) } returns Stream.of()
 
     val jobOutput =
       connectorMessageProcessor.run(
@@ -419,8 +430,8 @@ class ConnectorMessageProcessorTest {
 
   @Test
   fun `properly make connection successful`() {
-    every { streamFactory.create(any()) } returns
-      Stream.of(
+    every { streamFactory.create(any(), any()) } returns
+      listOf(
         AirbyteMessage()
           .withType(AirbyteMessage.Type.CONNECTION_STATUS)
           .withConnectionStatus(
@@ -428,7 +439,7 @@ class ConnectorMessageProcessorTest {
               .withStatus(AirbyteConnectionStatus.Status.SUCCEEDED)
               .withMessage("working"),
           ),
-      )
+      ).stream()
 
     val output =
       connectorMessageProcessor.run(
@@ -450,8 +461,8 @@ class ConnectorMessageProcessorTest {
 
   @Test
   fun `properly make connection failed`() {
-    every { streamFactory.create(any()) } returns
-      Stream.of(
+    every { streamFactory.create(any(), any()) } returns
+      listOf(
         AirbyteMessage()
           .withType(AirbyteMessage.Type.CONNECTION_STATUS)
           .withConnectionStatus(
@@ -459,7 +470,7 @@ class ConnectorMessageProcessorTest {
               .withStatus(AirbyteConnectionStatus.Status.FAILED)
               .withMessage("broken"),
           ),
-      )
+      ).stream()
 
     val output =
       connectorMessageProcessor.run(
@@ -493,13 +504,55 @@ class ConnectorMessageProcessorTest {
             ),
         )
 
-    every { streamFactory.create(any()) } returns
-      Stream.of(
+    every { streamFactory.create(any(), any()) } returns
+      listOf(
         catalog,
-      )
+      ).stream()
 
     val discoveredCatalogId = UUID.randomUUID()
     every { sourceApi.writeDiscoverCatalogResult(any()) } returns DiscoverCatalogResult(catalogId = discoveredCatalogId)
+
+    val output =
+      connectorMessageProcessor.run(
+        InputStream.nullInputStream(),
+        streamFactory,
+        ConnectorMessageProcessor.OperationInput(
+          discoveryInput =
+            StandardDiscoverCatalogInput()
+              .withConnectionConfiguration(Jsons.emptyObject())
+              .withSourceId(UUID.randomUUID().toString()),
+        ),
+        0,
+        SidecarInput.OperationType.DISCOVER,
+      )
+
+    assertEquals(discoveredCatalogId, output.discoverCatalogId)
+  }
+
+  @Test
+  fun `properly discover destination catalog`() {
+    val catalog =
+      AirbyteMessage()
+        .withType(AirbyteMessage.Type.DESTINATION_CATALOG)
+        .withDestinationCatalog(
+          DestinationCatalog()
+            .withOperations(
+              listOf(
+                DestinationOperation()
+                  .withObjectName("name")
+                  .withSyncMode(DestinationSyncMode.APPEND)
+                  .withJsonSchema(Jsons.emptyObject()),
+              ),
+            ),
+        )
+
+    every { streamFactory.create(any(), any()) } returns
+      listOf(
+        catalog,
+      ).stream()
+
+    val discoveredCatalogId = UUID.randomUUID()
+    every { destinationApi.writeDestinationDiscoverCatalogResult(any()) } returns DiscoverCatalogResult(catalogId = discoveredCatalogId)
 
     val output =
       connectorMessageProcessor.run(
@@ -528,10 +581,10 @@ class ConnectorMessageProcessorTest {
             .withProtocolVersion("test"),
         )
 
-    every { streamFactory.create(any()) } returns
-      Stream.of(
+    every { streamFactory.create(any(), any()) } returns
+      listOf(
         specMessage,
-      )
+      ).stream()
 
     val output =
       connectorMessageProcessor.run(

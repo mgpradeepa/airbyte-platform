@@ -4,25 +4,25 @@
 
 package io.airbyte.bootloader.config
 
-import io.airbyte.commons.resources.MoreResources
-import io.airbyte.config.persistence.OrganizationPersistence
+import io.airbyte.bootloader.runtime.AirbyteBootloaderConfig
+import io.airbyte.commons.resources.Resources
 import io.airbyte.config.persistence.UserPersistence
 import io.airbyte.config.persistence.WorkspacePersistence
 import io.airbyte.data.services.shared.DataSourceUnwrapper
 import io.airbyte.db.Database
-import io.airbyte.db.check.impl.JobsDatabaseAvailabilityCheck
+import io.airbyte.db.check.JobsDatabaseAvailabilityCheck
 import io.airbyte.db.factory.DatabaseCheckFactory
 import io.airbyte.db.init.DatabaseInitializer
 import io.airbyte.db.instance.DatabaseConstants
 import io.airbyte.db.instance.DatabaseMigrator
 import io.airbyte.db.instance.configs.ConfigsDatabaseMigrator
 import io.airbyte.db.instance.jobs.JobsDatabaseMigrator
+import io.airbyte.micronaut.runtime.AirbyteFlywayConfig
 import io.airbyte.persistence.job.DefaultJobPersistence
 import io.airbyte.persistence.job.DefaultMetadataPersistence
 import io.airbyte.persistence.job.JobPersistence
 import io.airbyte.persistence.job.MetadataPersistence
 import io.micronaut.context.annotation.Factory
-import io.micronaut.context.annotation.Value
 import io.micronaut.flyway.FlywayConfigurationProperties
 import jakarta.inject.Named
 import jakarta.inject.Singleton
@@ -61,16 +61,26 @@ class DatabaseBeanFactory {
   fun configFlyway(
     @Named("config") configFlywayConfigurationProperties: FlywayConfigurationProperties,
     @Named("config") configDataSource: DataSource,
-    @Value("\${airbyte.bootloader.migration-baseline-version}") baselineVersion: String,
-  ): Flyway =
-    configFlywayConfigurationProperties.fluentConfiguration
-      .dataSource(DataSourceUnwrapper.unwrapDataSource(configDataSource))
-      .baselineVersion(baselineVersion)
-      .baselineDescription(BASELINE_DESCRIPTION)
-      .baselineOnMigrate(BASELINE_ON_MIGRATION)
-      .installedBy(INSTALLED_BY)
-      .table(String.format("airbyte_%s_migrations", "configs"))
-      .load()
+    airbyteBootloaderConfig: AirbyteBootloaderConfig,
+  ): Flyway {
+    val flywayConfiguration =
+      configFlywayConfigurationProperties.fluentConfiguration
+        .dataSource(DataSourceUnwrapper.unwrapDataSource(configDataSource))
+        .baselineVersion(airbyteBootloaderConfig.migrationBaselineVersion)
+        .baselineDescription(BASELINE_DESCRIPTION)
+        .baselineOnMigrate(BASELINE_ON_MIGRATION)
+        .installedBy(INSTALLED_BY)
+        .table(String.format("airbyte_%s_migrations", "configs"))
+
+    // Setting the transactional lock to false allows us run queries outside transactions
+    // without hanging. This enables creating indexes concurrently (i.e. without locking tables)
+    flywayConfiguration.pluginRegister
+      .getPlugin(PostgreSQLConfigurationExtension::class.java)
+      .isTransactionalLock =
+      false
+
+    return flywayConfiguration.load()
+  }
 
   /**
    * Flyway jobs db singleton.
@@ -85,12 +95,12 @@ class DatabaseBeanFactory {
   fun jobsFlyway(
     @Named("jobs") jobsFlywayConfigurationProperties: FlywayConfigurationProperties,
     @Named("jobs") jobsDataSource: DataSource,
-    @Value("\${airbyte.bootloader.migration-baseline-version}") baselineVersion: String,
+    airbyteBootloaderConfig: AirbyteBootloaderConfig,
   ): Flyway {
     val flywayConfiguration =
       jobsFlywayConfigurationProperties.fluentConfiguration
         .dataSource(DataSourceUnwrapper.unwrapDataSource(jobsDataSource))
-        .baselineVersion(baselineVersion)
+        .baselineVersion(airbyteBootloaderConfig.migrationBaselineVersion)
         .baselineDescription(BASELINE_DESCRIPTION)
         .baselineOnMigrate(BASELINE_ON_MIGRATION)
         .installedBy(INSTALLED_BY)
@@ -120,24 +130,24 @@ class DatabaseBeanFactory {
   @Named("configsDatabaseInitializer")
   fun configsDatabaseInitializer(
     @Named("config") configsDslContext: DSLContext,
-    @Value("\${airbyte.flyway.configs.initialization-timeout-ms}") configsDatabaseInitializationTimeoutMs: Long,
+    airbyteFlywayConfig: AirbyteFlywayConfig,
   ): DatabaseInitializer =
     DatabaseCheckFactory.createConfigsDatabaseInitializer(
       DataSourceUnwrapper.unwrapContext(configsDslContext),
-      configsDatabaseInitializationTimeoutMs,
-      MoreResources.readResource(DatabaseConstants.CONFIGS_INITIAL_SCHEMA_PATH),
+      airbyteFlywayConfig.config.initializationTimeoutMs,
+      Resources.read(DatabaseConstants.CONFIGS_INITIAL_SCHEMA_PATH),
     )
 
   @Singleton
   @Named("jobsDatabaseInitializer")
   fun jobsDatabaseInitializer(
     @Named("jobs") jobsDslContext: DSLContext,
-    @Value("\${airbyte.flyway.jobs.initialization-timeout-ms}") jobsDatabaseInitializationTimeoutMs: Long,
+    airbyteFlywayConfig: AirbyteFlywayConfig,
   ): DatabaseInitializer =
     DatabaseCheckFactory.createJobsDatabaseInitializer(
       DataSourceUnwrapper.unwrapContext(jobsDslContext),
-      jobsDatabaseInitializationTimeoutMs,
-      MoreResources.readResource(DatabaseConstants.JOBS_INITIAL_SCHEMA_PATH),
+      airbyteFlywayConfig.jobs.initializationTimeoutMs,
+      Resources.read(DatabaseConstants.JOBS_INITIAL_SCHEMA_PATH),
     )
 
   @Singleton
@@ -150,26 +160,21 @@ class DatabaseBeanFactory {
   @Singleton
   @Named("configsDatabaseMigrator")
   fun configsDatabaseMigrator(
-    @Named("configDatabase") configDatabase: Database?,
-    @Named("configFlyway") configFlyway: Flyway?,
+    @Named("configDatabase") configDatabase: Database,
+    @Named("configFlyway") configFlyway: Flyway,
   ): DatabaseMigrator = ConfigsDatabaseMigrator(configDatabase, configFlyway)
 
   @Singleton
   @Named("jobsDatabaseMigrator")
   fun jobsDatabaseMigrator(
-    @Named("jobsDatabase") jobsDatabase: Database?,
-    @Named("jobsFlyway") jobsFlyway: Flyway?,
+    @Named("jobsDatabase") jobsDatabase: Database,
+    @Named("jobsFlyway") jobsFlyway: Flyway,
   ): DatabaseMigrator = JobsDatabaseMigrator(jobsDatabase, jobsFlyway)
 
   @Singleton
   fun userPersistence(
     @Named("configDatabase") configDatabase: Database?,
   ): UserPersistence = UserPersistence(configDatabase)
-
-  @Singleton
-  fun organizationPersistence(
-    @Named("configDatabase") configDatabase: Database?,
-  ): OrganizationPersistence = OrganizationPersistence(configDatabase)
 
   @Singleton
   fun workspacePersistence(

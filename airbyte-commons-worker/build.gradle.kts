@@ -4,13 +4,11 @@ plugins {
 }
 
 dependencies {
-  annotationProcessor(platform(libs.micronaut.platform))
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
 
   ksp(platform(libs.micronaut.platform))
   ksp(libs.bundles.micronaut.annotation.processor)
 
-  api(libs.google.cloud.pubsub)
+  implementation(libs.google.cloud.pubsub)
 
   implementation(platform(libs.micronaut.platform))
   implementation(libs.bundles.micronaut)
@@ -22,7 +20,6 @@ dependencies {
   implementation(libs.bundles.kubernetes.client)
   implementation(libs.java.jwt)
   implementation(libs.gson)
-  implementation(libs.guava)
   implementation(libs.temporal.sdk) {
     exclude(module = "guava")
   }
@@ -34,6 +31,8 @@ dependencies {
   implementation(libs.aws.java.sdk.sts)
   implementation(libs.s3)
   implementation(libs.sts)
+  implementation(libs.kotlin.coroutines)
+  implementation(libs.kotlin.coroutines.sl4j)
 
   implementation(project(":oss:airbyte-api:server-api"))
   implementation(project(":oss:airbyte-api:workload-api"))
@@ -49,6 +48,7 @@ dependencies {
   implementation(project(":oss:airbyte-config:config-models"))
   implementation(project(":oss:airbyte-config:config-persistence"))
   implementation(project(":oss:airbyte-config:config-secrets"))
+  implementation(project(":oss:airbyte-domain:models"))
   implementation(project(":oss:airbyte-featureflag"))
   implementation(project(":oss:airbyte-json-validation"))
   implementation(project(":oss:airbyte-mappers"))
@@ -58,9 +58,6 @@ dependencies {
   implementation(project(":oss:airbyte-worker-models"))
   implementation(libs.jakarta.validation.api)
 
-  testAnnotationProcessor(platform(libs.micronaut.platform))
-  testAnnotationProcessor(libs.bundles.micronaut.annotation.processor)
-  testAnnotationProcessor(libs.bundles.micronaut.test.annotation.processor)
 
   kspTest(platform(libs.micronaut.platform))
   kspTest(libs.bundles.micronaut.annotation.processor)
@@ -69,9 +66,10 @@ dependencies {
   testImplementation(libs.bundles.micronaut.test)
   testImplementation(libs.mockk)
   testImplementation(libs.json.path)
+  testImplementation(libs.json.smart)
   testImplementation(libs.bundles.mockito.inline)
+  testImplementation(libs.mockito.kotlin)
   testImplementation(libs.mockk)
-  testImplementation(variantOf(libs.opentracing.util) { classifier("tests") })
   testImplementation(libs.postgresql)
   testImplementation(libs.platform.testcontainers.postgresql)
   testImplementation(libs.docker.java)
@@ -83,6 +81,7 @@ dependencies {
   testImplementation(libs.junit.pioneer)
   testImplementation(libs.mockk)
   testImplementation(libs.bundles.logback)
+  testImplementation(libs.kotlin.coroutines.test)
 
   testRuntimeOnly(libs.junit.jupiter.engine)
   testRuntimeOnly(libs.javax.databind)

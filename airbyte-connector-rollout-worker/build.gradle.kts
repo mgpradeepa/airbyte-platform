@@ -7,6 +7,7 @@ plugins {
 dependencies {
   ksp(platform(libs.micronaut.platform))
   ksp(libs.bundles.micronaut.annotation.processor)
+  ksp(project(":oss:airbyte-configuration-processor"))
 
   implementation(platform(libs.micronaut.platform))
   implementation(libs.bundles.micronaut)
@@ -32,6 +33,7 @@ dependencies {
   testImplementation(libs.temporal.testing)
   testImplementation(libs.mockk)
   testImplementation(libs.mockito.inline)
+  testImplementation(libs.bundles.micronaut.test)
 }
 
 airbyte {
@@ -40,11 +42,11 @@ airbyte {
     defaultJvmArgs = listOf("-XX:+ExitOnOutOfMemoryError", "-XX:MaxRAMPercentage=75.0")
     localEnvVars.putAll(
       mapOf(
-        "AIRBYTE_ROLE" to "undefined",
         "AIRBYTE_VERSION" to "dev",
         "DATA_PLANE_ID" to "local",
         "MICRONAUT_ENVIRONMENTS" to "test",
-      ),
+        "SERVICE_NAME" to project.name,
+        ),
     )
   }
   docker {

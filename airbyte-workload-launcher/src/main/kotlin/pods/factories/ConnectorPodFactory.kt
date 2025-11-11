@@ -8,12 +8,12 @@ import io.airbyte.featureflag.ANONYMOUS
 import io.airbyte.featureflag.Connection
 import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.featureflag.UseCustomK8sScheduler
-import io.airbyte.workers.context.WorkloadSecurityContextProvider
-import io.airbyte.workers.pod.ContainerConstants
-import io.airbyte.workers.pod.FileConstants
-import io.airbyte.workers.pod.KubeContainerInfo
-import io.airbyte.workers.pod.KubePodInfo
-import io.airbyte.workers.pod.ResourceConversionUtils
+import io.airbyte.micronaut.runtime.AirbyteConnectorConfig
+import io.airbyte.workload.launcher.constants.ContainerConstants
+import io.airbyte.workload.launcher.context.WorkloadSecurityContextProvider
+import io.airbyte.workload.launcher.pods.KubeContainerInfo
+import io.airbyte.workload.launcher.pods.KubePodInfo
+import io.airbyte.workload.launcher.pods.ResourceConversionUtils
 import io.fabric8.kubernetes.api.model.Container
 import io.fabric8.kubernetes.api.model.ContainerBuilder
 import io.fabric8.kubernetes.api.model.EnvVar
@@ -39,8 +39,10 @@ data class ConnectorPodFactory(
   private val connectorArgs: Map<String, String>,
   private val workloadSecurityContextProvider: WorkloadSecurityContextProvider,
   private val resourceRequirementsFactory: ResourceRequirementsFactory,
+  private val nodeSelectionFactory: NodeSelectionFactory,
+  private val airbyteConnectorConfig: AirbyteConnectorConfig,
 ) {
-  fun create(
+  internal fun create(
     allLabels: Map<String, String>,
     nodeSelectors: Map<String, String>,
     kubePodInfo: KubePodInfo,
@@ -52,12 +54,26 @@ data class ConnectorPodFactory(
   ): Pod {
     val volumeMountPairs = volumeFactory.connector()
 
-    val init: Container = initContainerFactory.create(initContainerReqs, volumeMountPairs.initMounts, runtimeEnvVars, workspaceId)
-    val main: Container = buildMainContainer(connectorContainerReqs, volumeMountPairs.mainMounts, kubePodInfo.mainContainerInfo, runtimeEnvVars)
-    val sidecar: Container = buildSidecarContainer(volumeMountPairs.sidecarMounts)
+    val init: Container =
+      initContainerFactory.create(
+        resourceReqs = initContainerReqs,
+        volumeMounts = volumeMountPairs.initMounts,
+        runtimeEnvVars = runtimeEnvVars,
+        workspaceId = workspaceId,
+      )
+    val main: Container =
+      buildMainContainer(
+        resourceReqs = connectorContainerReqs,
+        volumeMounts = volumeMountPairs.mainMounts,
+        containerInfo = kubePodInfo.mainContainerInfo!!,
+        runtimeEnvVars = runtimeEnvVars,
+      )
+    val sidecar: Container = buildSidecarContainer(volumeMounts = volumeMountPairs.sidecarMounts, runtimeEnvVars = runtimeEnvVars)
 
     // TODO: We should inject the scheduler from the ENV and use this just for overrides
     val schedulerName = featureFlagClient.stringVariation(UseCustomK8sScheduler, Connection(ANONYMOUS))
+
+    val nodeSelection = nodeSelectionFactory.createNodeSelection(nodeSelectors, allLabels)
 
     return PodBuilder()
       .withApiVersion("v1")
@@ -74,8 +90,9 @@ data class ConnectorPodFactory(
       .withContainers(sidecar, main)
       .withInitContainers(init)
       .withVolumes(volumeMountPairs.volumes)
-      .withNodeSelector<String, String>(nodeSelectors)
-      .withTolerations(tolerations)
+      .withNodeSelector<String, String>(nodeSelection.nodeSelectors)
+      .withTolerations(nodeSelection.tolerations)
+      .withAffinity(nodeSelection.podAffinity)
       .withImagePullSecrets(imagePullSecrets) // An empty list or an empty LocalObjectReference turns this into a no-op setting.
       .withSecurityContext(workloadSecurityContextProvider.defaultPodSecurityContext())
       .endSpec()
@@ -94,7 +111,7 @@ data class ConnectorPodFactory(
           "--$k $v"
         }.joinToString(prefix = " ", separator = " ")
 
-    val mainCommand = ContainerCommandFactory.connectorOperation(operationCommand, configArgs)
+    val mainCommand = ContainerCommandFactory.connectorOperation(operationCommand, configArgs, airbyteConnectorConfig.configDir)
 
     return ContainerBuilder()
       .withName(ContainerConstants.MAIN_CONTAINER_NAME)
@@ -102,14 +119,17 @@ data class ConnectorPodFactory(
       .withImagePullPolicy(containerInfo.pullPolicy)
       .withCommand("sh", "-c", mainCommand)
       .withEnv(connectorEnvVars + runtimeEnvVars)
-      .withWorkingDir(FileConstants.CONFIG_DIR)
+      .withWorkingDir(airbyteConnectorConfig.configDir)
       .withVolumeMounts(volumeMounts)
       .withResources(resourceReqs)
       .withSecurityContext(workloadSecurityContextProvider.rootlessContainerSecurityContext())
       .build()
   }
 
-  private fun buildSidecarContainer(volumeMounts: List<VolumeMount>): Container {
+  private fun buildSidecarContainer(
+    volumeMounts: List<VolumeMount>,
+    runtimeEnvVars: List<EnvVar>,
+  ): Container {
     val mainCommand = ContainerCommandFactory.sidecar()
     val sidecarReqs = resourceRequirementsFactory.sidecar()
 
@@ -118,8 +138,8 @@ data class ConnectorPodFactory(
       .withImage(sidecarContainerInfo.image)
       .withImagePullPolicy(sidecarContainerInfo.pullPolicy)
       .withCommand("sh", "-c", mainCommand)
-      .withWorkingDir(FileConstants.CONFIG_DIR)
-      .withEnv(sideCarEnvVars)
+      .withWorkingDir(airbyteConnectorConfig.configDir)
+      .withEnv(sideCarEnvVars + runtimeEnvVars)
       .withVolumeMounts(volumeMounts)
       .withResources(ResourceConversionUtils.domainToApi(sidecarReqs))
       .withSecurityContext(workloadSecurityContextProvider.rootlessContainerSecurityContext())
@@ -127,8 +147,8 @@ data class ConnectorPodFactory(
   }
 
   companion object {
-    const val CHECK_OPERATION_NAME = "check"
-    const val DISCOVER_OPERATION_NAME = "discover"
-    const val SPEC_OPERATION_NAME = "spec"
+    internal const val CHECK_OPERATION_NAME = "check"
+    internal const val DISCOVER_OPERATION_NAME = "discover"
+    internal const val SPEC_OPERATION_NAME = "spec"
   }
 }

@@ -7,11 +7,15 @@ package pods.factories
 import io.airbyte.commons.storage.STORAGE_CLAIM_NAME
 import io.airbyte.commons.storage.STORAGE_MOUNT
 import io.airbyte.commons.storage.STORAGE_VOLUME_NAME
-import io.airbyte.featureflag.PlaneName
 import io.airbyte.featureflag.TestClient
-import io.airbyte.workers.context.WorkloadSecurityContextProvider
-import io.airbyte.workers.pod.KubeContainerInfo
-import io.airbyte.workers.pod.ResourceConversionUtils
+import io.airbyte.micronaut.runtime.AirbyteConnectorConfig
+import io.airbyte.micronaut.runtime.AirbyteContainerConfig
+import io.airbyte.micronaut.runtime.AirbyteStorageConfig
+import io.airbyte.micronaut.runtime.AirbyteWorkerConfig
+import io.airbyte.micronaut.runtime.StorageType
+import io.airbyte.workload.launcher.context.WorkloadSecurityContextProvider
+import io.airbyte.workload.launcher.pods.KubeContainerInfo
+import io.airbyte.workload.launcher.pods.ResourceConversionUtils
 import io.airbyte.workload.launcher.pods.factories.InitContainerFactory
 import io.airbyte.workload.launcher.pods.factories.NodeSelectionFactory
 import io.airbyte.workload.launcher.pods.factories.ProfilerContainerFactory
@@ -55,8 +59,25 @@ class ReplicationPodFactoryTest {
       Fixtures.defaultReplicationPodFactory.copy(
         volumeFactory =
           Fixtures.defaultVolumeFactory.copy(
-            cloudStorageType = "LOCAL",
-            localVolumeEnabled = true,
+            airbyteWorkerConfig =
+              AirbyteWorkerConfig(
+                job =
+                  AirbyteWorkerConfig.AirbyteWorkerJobConfig(
+                    kubernetes =
+                      AirbyteWorkerConfig.AirbyteWorkerJobConfig.AirbyteWorkerJobKubernetesConfig(
+                        volumes =
+                          ConnectorPodFactoryTest.Fixtures.airbyteWorkerConfig.job.kubernetes.volumes.copy(
+                            local =
+                              AirbyteWorkerConfig.AirbyteWorkerJobConfig.AirbyteWorkerJobKubernetesConfig
+                                .AirbyteWorkerJobKubernetesVolumeConfig
+                                .AirbyteWorkerJobKubernetesVolumeLocalConfig(
+                                  enabled = true,
+                                ),
+                          ),
+                      ),
+                  ),
+              ),
+            airbyteStorageConfig = ConnectorPodFactoryTest.Fixtures.airbyteStorageConfig.copy(type = StorageType.LOCAL),
           ),
       )
 
@@ -122,7 +143,7 @@ class ReplicationPodFactoryTest {
       )
     val nodeSelectionFactory: NodeSelectionFactory =
       mockk {
-        every { createReplicationNodeSelection(any(), any()) } returns expectedNodeSelection
+        every { createNodeSelection(any(), any()) } returns expectedNodeSelection
       }
     val fac =
       Fixtures.defaultReplicationPodFactory.copy(
@@ -146,7 +167,7 @@ class ReplicationPodFactoryTest {
       )
     val nodeSelectionFactory: NodeSelectionFactory =
       mockk {
-        every { createResetNodeSelection(any(), any()) } returns expectedNodeSelection
+        every { createResetNodeSelection(any()) } returns expectedNodeSelection
       }
     val fac =
       Fixtures.defaultReplicationPodFactory.copy(
@@ -161,7 +182,9 @@ class ReplicationPodFactoryTest {
   }
 
   object Fixtures {
-    val workloadSecurityContextProvider = WorkloadSecurityContextProvider(rootlessWorkload = true)
+    val airbyteConnectorConfig = AirbyteConnectorConfig()
+    val airbyteContainerConfig = AirbyteContainerConfig(rootlessWorkload = true)
+    val workloadSecurityContextProvider = WorkloadSecurityContextProvider(airbyteContainerConfig)
     val featureFlagClient = TestClient()
     val resourceRequirements =
       io.airbyte.config
@@ -180,16 +203,55 @@ class ReplicationPodFactoryTest {
         fileTransferReqs = resourceRequirements,
       )
 
+    val airbyteStorageConfig = AirbyteStorageConfig(type = StorageType.GCS)
+    val airbyteWorkerConfig =
+      AirbyteWorkerConfig(
+        job =
+          AirbyteWorkerConfig.AirbyteWorkerJobConfig(
+            kubernetes =
+              AirbyteWorkerConfig.AirbyteWorkerJobConfig.AirbyteWorkerJobKubernetesConfig(
+                serviceAccount = "test-sa",
+                volumes =
+                  AirbyteWorkerConfig.AirbyteWorkerJobConfig
+                    .AirbyteWorkerJobKubernetesConfig
+                    .AirbyteWorkerJobKubernetesVolumeConfig(
+                      dataPlaneCreds =
+                        AirbyteWorkerConfig.AirbyteWorkerJobConfig.AirbyteWorkerJobKubernetesConfig
+                          .AirbyteWorkerJobKubernetesVolumeConfig
+                          .AirbyteWorkerJobKubernetesVolumeDataPlaneCredentialsConfig(
+                            secretName = "test-dp-secret-name",
+                            mountPath = "/dp-secret-mount-path",
+                          ),
+                      secret =
+                        AirbyteWorkerConfig.AirbyteWorkerJobConfig.AirbyteWorkerJobKubernetesConfig
+                          .AirbyteWorkerJobKubernetesVolumeConfig
+                          .AirbyteWorkerJobKubernetesVolumeSecretConfig(
+                            secretName = "test-vol-secret-name",
+                            mountPath = "/secret-mount-path",
+                          ),
+                      staging =
+                        AirbyteWorkerConfig.AirbyteWorkerJobConfig.AirbyteWorkerJobKubernetesConfig
+                          .AirbyteWorkerJobKubernetesVolumeConfig
+                          .AirbyteWorkerJobKubernetesVolumeStagingConfig(
+                            mountPath = "/staging-mount-path",
+                          ),
+                      local =
+                        AirbyteWorkerConfig.AirbyteWorkerJobConfig.AirbyteWorkerJobKubernetesConfig
+                          .AirbyteWorkerJobKubernetesVolumeConfig
+                          .AirbyteWorkerJobKubernetesVolumeLocalConfig(
+                            enabled = false,
+                          ),
+                    ),
+              ),
+          ),
+      )
+
     val defaultVolumeFactory =
       VolumeFactory(
         googleApplicationCredentials = null,
-        secretName = "test-vol-secret-name",
-        secretMountPath = "/secret-mount-path",
-        dataPlaneCredsSecretName = "test-dp-secret-name",
-        dataPlaneCredsMountPath = "/dp-secret-mount-path",
-        stagingMountPath = "/staging-mount-path",
-        cloudStorageType = "gcs",
-        localVolumeEnabled = false,
+        airbyteConnectorConfig = airbyteConnectorConfig,
+        airbyteStorageConfig = airbyteStorageConfig,
+        airbyteWorkerConfig = airbyteWorkerConfig,
       )
 
     val defaultTolerations = listOf(Toleration().apply { key = "configuredByUser" })
@@ -199,7 +261,6 @@ class ReplicationPodFactoryTest {
       NodeSelectionFactory(
         featureFlagClient = featureFlagClient,
         tolerations = defaultTolerations,
-        infraFlagContexts = listOf(PlaneName("test")),
         spotToleration = spotToleration,
       )
 
@@ -212,6 +273,7 @@ class ReplicationPodFactoryTest {
             envVars = listOf(EnvVar("INIT_ENV_1", "INIT_ENV_VAL_1", null)),
             initContainerInfo = KubeContainerInfo("test-init-image", "Always"),
             featureFlagClient = featureFlagClient,
+            airbyteConnectorConfig = airbyteConnectorConfig,
           ),
         replContainerFactory =
           ReplicationContainerFactory(
@@ -219,14 +281,14 @@ class ReplicationPodFactoryTest {
             orchestratorEnvVars = emptyList(),
             sourceEnvVars = emptyList(),
             destinationEnvVars = emptyList(),
-            imagePullPolicy = "Always",
+            airbyteWorkerConfig = airbyteWorkerConfig,
           ),
         ProfilerContainerFactory(emptyList(), KubeContainerInfo("", "Always"), io.airbyte.config.ResourceRequirements()),
         volumeFactory = defaultVolumeFactory,
         workloadSecurityContextProvider = workloadSecurityContextProvider,
-        serviceAccount = "test-sa",
         nodeSelectionFactory = defaultNodeSelectionFactory,
         imagePullSecrets = emptyList(),
+        airbyteWorkerConfig = airbyteWorkerConfig,
       )
 
     fun createPodWithDefaults(
@@ -246,6 +308,7 @@ class ReplicationPodFactoryTest {
       destRuntimeEnvVars: List<EnvVar> = emptyList(),
       isFileTransfer: Boolean = false,
       workspaceId: UUID = UUID.randomUUID(),
+      enableAsyncProfiler: Boolean = false,
     ) = factory.create(
       podName,
       allLabels,
@@ -262,7 +325,7 @@ class ReplicationPodFactoryTest {
       destRuntimeEnvVars,
       isFileTransfer,
       workspaceId,
-      false,
+      enableAsyncProfiler,
     )
 
     fun createResetWithDefaults(

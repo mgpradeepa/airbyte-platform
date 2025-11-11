@@ -87,6 +87,28 @@ components:
             detail:
               type: string
               default: Your email domain requires SSO sign-in. Please sign in using your SSO provider.
+    EmbeddedEndpointMovedProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 301
+            type:
+              type: string
+              default: error:embedded/endpoint-moved
+            title:
+              type: string
+              default: Airbyte Embedded Endpoint Moved
+            detail:
+              type: string
+              default: This endpoint for Airbyte Embedded has moved.  Please see https://api.airbyte.ai/api/v1/redoc for the latest Airbyte Embedded API documentation and update your configuration.
+            documentationUrl:
+              type: string
+              default: "https://api.airbyte.ai/api/v1/redoc"
     LicenseEntitlementProblemResponse:
       x-implements: io.airbyte.api.problems.ProblemResponse
       type: object
@@ -127,6 +149,27 @@ components:
               default: A user with this email already exists.
             data:
               $ref: "#/components/schemas/ProblemEmailData"
+    FailedPreconditionProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 412
+            type:
+              type: string
+              default: error:failed-precondition
+            title:
+              type: string
+              default: Failed Precondition
+            detail:
+              type: string
+              default: A condition required for this endpoint was not met.
+            data:
+              $ref: "#/components/schemas/FailedPreconditionData"
     OAuthCallbackFailureProblemResponse:
       x-implements: io.airbyte.api.problems.ProblemResponse
       type: object
@@ -253,6 +296,27 @@ components:
               default: State conflict
             data:
               $ref: "#/components/schemas/ProblemMessageData"
+    ConnectionLockedProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 409
+            type:
+              type: string
+              default: error:connection/locked
+            title:
+              type: string
+              default: Connection is locked
+            detail:
+              type: string
+              default: The connection is locked and cannot be modified.
+            data:
+              $ref: "#/components/schemas/ProblemConnectionLockedData"
     TryAgainLaterConflictProblemResponse:
       x-implements: io.airbyte.api.problems.ProblemResponse
       type: object
@@ -522,6 +586,27 @@ components:
               default: Syncs
             data:
               $ref: "#/components/schemas/ProblemCronExpressionData"
+    BasicScheduleValidationUnderOneHourNotAllowedProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:basic-schedule-validation/under-one-hour-not-allowed
+            title:
+              type: string
+              default: Basic sync schedules more frequent than once per hour are not allowed
+            detail:
+              type: string
+              default: Syncs more frequent than once per hour require an entitlement
+            data:
+              $ref: "#/components/schemas/ProblemBasicScheduleData"
     MapperValidationProblemResponse:
       x-implements: io.airbyte.api.problems.ProblemResponse
       type: object
@@ -606,7 +691,72 @@ components:
               default: Attempted to use pre-existing secret values, but an existing secret for that mapper was not found. Please provide the secret values.
             data:
               $ref: "#/components/schemas/ProblemMapperIdData"
-
+    ConnectionDoesNotSupportFileTransfersProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection-validation/file-transfer/connection-unsupported
+            title:
+              type: string
+              default: Connection does not support file transfers
+            detail:
+              type: string
+              default: The source or destination used in this connection does not support file transfers, so they cannot be enabled.
+            data:
+              $ref: "#/components/schemas/ProblemConnectionUnsupportedFileTransfersData"
+    StreamDoesNotSupportFileTransfersProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection-validation/file-transfer/stream-unsupported
+            title:
+              type: string
+              default: Stream does not support file transfers
+            detail:
+              type: string
+              default: The stream does not support file transfers, so it cannot be enabled.
+            data:
+              $ref: "#/components/schemas/ProblemConnectionUnsupportedFileTransfersData"
+    ConnectionConflictingStreamProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection-conflicting-destination-stream
+            title:
+              type: string
+              default: Connection contains conflicting stream(s).
+            detail:
+              type: string
+              default: This connection contains stream(s) that conflict with existing connection(s).
+            documentationUrl:
+              type: string
+              default: "https://docs.airbyte.com/using-airbyte/configuring-schema#stream-uniqueness"
+            data:
+              $ref: "#/components/schemas/ProblemConnectionConflictingStreamsData"
     RuntimeSecretsManagerRequiredProblemResponse:
       x-implements: io.airbyte.api.problems.ProblemResponse
       type: object
@@ -961,6 +1111,48 @@ components:
               default: A tag with this name already exists in this workspace.
             data:
               $ref: "#/components/schemas/ProblemMessageData"
+    GroupAlreadyExistsProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 409
+            type:
+              type: string
+              default: error:group-already-exists
+            title:
+              type: string
+              default: Group already exists
+            detail:
+              type: string
+              default: A group with this name already exists in this organization.
+            data:
+              $ref: "#/components/schemas/ProblemMessageData"
+    GroupMemberAlreadyExistsProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 409
+            type:
+              type: string
+              default: error:group-member-already-exists
+            title:
+              type: string
+              default: Group member already exists
+            detail:
+              type: string
+              default: This user is already a member of this group.
+            data:
+              $ref: "#/components/schemas/ProblemMessageData"
     TagInvalidHexColorProblemResponse:
       x-implements: io.airbyte.api.problems.ProblemResponse
       type: object
@@ -1059,6 +1251,18 @@ components:
           type: string
         validationErrorMessage:
           type: string
+    ProblemBasicScheduleData:
+      type: object
+      required:
+        - timeUnit
+        - units
+      properties:
+        timeUnit:
+          type: string
+        units:
+          type: integer
+        validationErrorMessage:
+          type: string
     ProblemCronTimezoneData:
       type: object
       required:
@@ -1121,6 +1325,13 @@ components:
       properties:
         email:
           type: string
+    FailedPreconditionData:
+      type: object
+      required:
+        - failedPreconditionDetail
+      properties:
+        failedPreconditionDetail:
+          type: string
     ProblemRedirectURLData:
       type: object
       required:
@@ -1150,6 +1361,16 @@ components:
         - value
       properties:
         value:
+          type: string
+    ProblemConnectionLockedData:
+      type: object
+      required:
+        - connectionId
+      properties:
+        connectionId:
+          type: string
+          format: uuid
+        statusReason:
           type: string
     ProblemLicenseEntitlementData:
       type: object
@@ -1254,3 +1475,608 @@ components:
               default: The notification is missing a URL.
             data:
               $ref: "#/components/schemas/ProblemMessageData"
+    ProblemStreamDataItem:
+      type: object
+      required:
+        - streamName
+        - streamNamespace
+      properties:
+        streamName:
+          type: string
+          description: Name of the stream
+        streamNamespace:
+          type: string
+          description: Namespace of the stream
+    ProblemConnectionUnsupportedFileTransfersData:
+      type: object
+      required:
+        - streams
+      properties:
+        streams:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProblemStreamDataItem"
+    ProblemConnectionConflictingStreamsData:
+      type: object
+      required:
+        - streams
+      properties:
+        streams:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProblemConnectionConflictingStreamsDataItem"
+    ProblemConnectionConflictingStreamsDataItem:
+      type: object
+      required:
+        - streamName
+        - streamNamespace
+        - connectionIds
+      properties:
+        streamName:
+          type: string
+          description: Name of the stream
+        streamNamespace:
+          type: string
+          description: Namespace of the stream
+        connectionIds:
+          type: array
+          description: List of connection IDs using this stream configuration
+          items:
+            type: string
+            format: uuid
+    DestinationDiscoverNotSupportedProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:destination/discover-not-supported
+            title:
+              type: string
+              default: Destination does not support discover
+            detail:
+              type: string
+              default: The destination does not support the discover operation.
+            data:
+              $ref: "#/components/schemas/ProblemDestinationDiscoverData"
+    ProblemDestinationDiscoverData:
+      type: object
+      required:
+        - destinationId
+        - destinationVersion
+        - destinationDefinitionId
+      properties:
+        destinationId:
+          type: string
+          format: uuid
+          description: The ID of the destination that doesn't support discover
+        destinationVersion:
+          type: string
+          description: The version of the destination that doesn't support discover
+        destinationDefinitionId:
+          type: string
+          format: uuid
+          description: The ID of the destination definition that doesn't support discover
+    DestinationCatalogNotFoundProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 404
+            type:
+              type: string
+              default: error:destination/catalog-not-found
+            title:
+              type: string
+              default: Destination catalog not found
+            detail:
+              type: string
+              default: This connection has not been configured with a destination catalog.
+            data:
+              $ref: "#/components/schemas/ProblemDestinationCatalogNotFoundData"
+    ProblemDestinationCatalogNotFoundData:
+      type: object
+      required:
+        - connectionId
+      properties:
+        connectionId:
+          type: string
+          format: uuid
+    DestinationCatalogMissingObjectNameProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection/destination-catalog/missing-object-name
+            title:
+              type: string
+              default: Configured stream missing destination object name
+            detail:
+              type: string
+              default: Configured stream must have a destination object name.
+            data:
+              $ref: "#/components/schemas/ProblemDestinationCatalogStreamData"
+    DestinationCatalogInvalidOperationProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection/destination-catalog/invalid-operation
+            title:
+              type: string
+              default: Invalid destination operation configuration
+            detail:
+              type: string
+              default: Configured stream's destination object name and sync mode does not match any destination operation.
+            data:
+              $ref: "#/components/schemas/ProblemDestinationCatalogOperationData"
+    DestinationCatalogMissingRequiredFieldProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection/destination-catalog/missing-required-field
+            title:
+              type: string
+              default: Configured stream missing required field
+            detail:
+              type: string
+              default: Configured stream is missing a required field for the destination operation.
+            data:
+              $ref: "#/components/schemas/ProblemDestinationCatalogRequiredFieldData"
+    DestinationCatalogInvalidAdditionalFieldProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection/destination-catalog/invalid-additional-field
+            title:
+              type: string
+              default: Invalid additional field in configured stream
+            detail:
+              type: string
+              default: Source field is not present in destination operation and schema does not allow additional properties.
+            data:
+              $ref: "#/components/schemas/ProblemDestinationCatalogAdditionalFieldData"
+    DestinationCatalogRequiredProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection/destination-catalog/required
+            title:
+              type: string
+              default: Destination catalog is required
+            detail:
+              type: string
+              default: A destination catalog is required for data activation connections.
+            data:
+              $ref: "#/components/schemas/ProblemDestinationCatalogRequiredData"
+    DestinationCatalogMissingPrimaryKeyProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection/destination-catalog/missing-primary-key
+            title:
+              type: string
+              default: Primary key required when matching keys are defined
+            detail:
+              type: string
+              default: When the destination operation defines matching keys, the stream must have a primary key configured.
+            data:
+              $ref: "#/components/schemas/ProblemDestinationCatalogMatchingKeyData"
+    DestinationCatalogInvalidPrimaryKeyProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 400
+            type:
+              type: string
+              default: error:connection/destination-catalog/invalid-primary-key
+            title:
+              type: string
+              default: Primary key must match one of the matching keys
+            detail:
+              type: string
+              default: The configured primary key must be one of the supported matching keys defined in the destination operation.
+            data:
+              $ref: "#/components/schemas/ProblemDestinationCatalogMatchingKeyData"
+    ProblemDestinationCatalogStreamData:
+      type: object
+      required:
+        - streamName
+      properties:
+        streamName:
+          type: string
+          description: Name of the configured stream
+        streamNamespace:
+          type: string
+          description: Namespace of the configured stream
+    ProblemDestinationCatalogOperationData:
+      type: object
+      required:
+        - streamName
+        - destinationObjectName
+        - syncMode
+      properties:
+        streamName:
+          type: string
+          description: Name of the configured stream
+        streamNamespace:
+          type: string
+          description: Namespace of the configured stream
+        destinationObjectName:
+          type: string
+          description: The destination object name that could not be matched
+        syncMode:
+          type: string
+          description: The sync mode that could not be matched
+    ProblemDestinationCatalogRequiredFieldData:
+      type: object
+      required:
+        - streamName
+        - fieldName
+        - destinationOperationName
+      properties:
+        streamName:
+          type: string
+          description: Name of the configured stream
+        streamNamespace:
+          type: string
+          description: Namespace of the configured stream
+        fieldName:
+          type: string
+          description: Name of the missing required field
+        destinationOperationName:
+          type: string
+          description: Name of the destination operation requiring the field
+    ProblemDestinationCatalogAdditionalFieldData:
+      type: object
+      required:
+        - streamName
+        - fieldName
+        - destinationOperationName
+      properties:
+        streamName:
+          type: string
+          description: Name of the configured stream
+        streamNamespace:
+          type: string
+          description: Namespace of the configured stream
+        fieldName:
+          type: string
+          description: Name of the additional field that is not allowed
+        destinationOperationName:
+          type: string
+          description: Name of the destination operation that does not allow additional properties
+    ProblemDestinationCatalogRequiredData:
+      type: object
+      required:
+        - destinationId
+      properties:
+        destinationId:
+          type: string
+          format: uuid
+          description: The ID of the destination
+    ProblemDestinationCatalogMatchingKeyData:
+      type: object
+      required:
+        - streamName
+        - matchingKeys
+      properties:
+        streamName:
+          type: string
+          description: Name of the configured stream
+        streamNamespace:
+          type: string
+          description: Namespace of the configured stream
+        matchingKeys:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+          description: The list of supported matching keys defined in the destination operation
+        primaryKey:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+          description: The configured primary key for the stream
+    SSOConfigRetrievalProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 500
+            type:
+              type: string
+              default: error:sso-config-retrieval
+            title:
+              type: string
+              default: SSO config retrieval error
+            detail:
+              type: string
+              default: An error occurred when attempting to retrieve sso config data
+            data:
+              $ref: "#/components/schemas/ProblemSSOConfigRetrievalData"
+    ProblemSSOConfigRetrievalData:
+      type: object
+      required:
+        - organizationId
+      properties:
+        organizationId:
+          type: string
+        errorMessage:
+          type: string
+    SSOSetupProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 500
+            type:
+              type: string
+              default: error:sso-setup
+            title:
+              type: string
+              default: SSO setup configuration error
+            detail:
+              type: string
+              default: An error occurred when performing a SSO setup
+            data:
+              $ref: "#/components/schemas/ProblemSSOSetupData"
+    ProblemSSOSetupData:
+      type: object
+      required:
+        - companyIdentifier
+      properties:
+        companyIdentifier:
+          type: string
+        errorMessage:
+          type: string
+    SSODeletionProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 500
+            type:
+              type: string
+              default: error:sso-deletion
+            title:
+              type: string
+              default: SSO deletion failed
+            detail:
+              type: string
+              default: An error occurred when performing an SSO config delete
+            data:
+              $ref: "#/components/schemas/ProblemSSODeletionData"
+    ProblemSSODeletionData:
+      type: object
+      required:
+        - organizationId
+        - companyIdentifier
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        companyIdentifier:
+          type: string
+        errorMessage:
+          type: string
+    SSOCredentialUpdateProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 500
+            type:
+              type: string
+              default: error:sso-credential-update
+            title:
+              type: string
+              default: SSO credential update failed
+            detail:
+              type: string
+              default: An error occurred when performing an SSO IDP credentials update
+            data:
+              $ref: "#/components/schemas/ProblemSSOCredentialUpdateData"
+    ProblemSSOCredentialUpdateData:
+      type: object
+      required:
+        - companyIdentifier
+      properties:
+        companyIdentifier:
+          type: string
+        errorMessage:
+          type: string
+    SSOActivationProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 500
+            type:
+              type: string
+              default: error:sso-activation
+            title:
+              type: string
+              default: SSO Activation Error
+            detail:
+              type: string
+              default: An error occurred during SSO activation operation
+            data:
+              $ref: "#/components/schemas/ProblemSSOActivationData"
+    ProblemSSOActivationData:
+      type: object
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        companyIdentifier:
+          type: string
+        errorMessage:
+          type: string
+    SSOTokenValidationProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 401
+            type:
+              type: string
+              default: error:sso-token-validation
+            title:
+              type: string
+              default: SSO Token Validation Failed
+            detail:
+              type: string
+              default: The provided SSO access token is invalid or expired
+            data:
+              $ref: "#/components/schemas/ProblemSSOTokenValidationData"
+    ProblemSSOTokenValidationData:
+      type: object
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        errorMessage:
+          type: string
+    EntitlementServiceUnableToAddOrganizationProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 503
+            type:
+              type: string
+              default: error:entitlement-service/error-adding-organization
+            title:
+              type: string
+              default: entitlement-service-error-adding-organization
+            detail:
+              type: string
+              default: There was a problem adding the organization ot the entitlement service. Organization functionality may be limited.
+            data:
+              $ref: "#/components/schemas/ProblemEntitlementServiceData"
+    EntitlementServiceInvalidOrganizationStateProblemResponse:
+      x-implements: io.airbyte.api.problems.ProblemResponse
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/BaseProblemFields"
+        - type: object
+          properties:
+            status:
+              type: integer
+              default: 500
+            type:
+              type: string
+              default: error:entitlement-service/invalid-organization-state
+            title:
+              type: string
+              default: entitlement-service-invalid-organization-state
+            detail:
+              type: string
+              default: The organization is in an invalid state in the entitlement service.
+            data:
+              $ref: "#/components/schemas/ProblemEntitlementServiceData"
+    ProblemEntitlementServiceData:
+      type: object
+      required:
+        - organizationId
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        planId:
+          type: string
+        errorMessage:
+          type: string

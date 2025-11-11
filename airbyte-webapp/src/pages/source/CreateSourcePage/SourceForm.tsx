@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { FormattedMessage } from "react-intl";
 import { useLocation } from "react-router-dom";
 
@@ -10,15 +10,16 @@ import { ConnectionConfiguration } from "area/connector/types";
 import { useGetSourceDefinitionSpecificationAsync } from "core/api";
 import { SourceDefinitionRead } from "core/api/types/AirbyteClient";
 import { Connector } from "core/domain/connector";
+import { useExperiment } from "hooks/services/Experiment";
 import { ForkConnectorButton } from "pages/connectorBuilder/components/ForkConnectorButton";
-import { ConnectorCard } from "views/Connector/ConnectorCard";
+import { ConnectorCard, NextConnectorCard } from "views/Connector/ConnectorCard";
 import { ConnectorCardValues } from "views/Connector/ConnectorForm/types";
 
 export interface SourceFormValues {
   name: string;
   serviceType: string;
   sourceDefinitionId?: string;
-  connectionConfiguration?: ConnectionConfiguration;
+  connectionConfiguration: ConnectionConfiguration;
 }
 
 interface SourceFormProps {
@@ -37,10 +38,11 @@ const hasSourceDefinitionId = (state: unknown): state is { sourceDefinitionId: s
 
 export const SourceForm: React.FC<SourceFormProps> = ({ onSubmit, sourceDefinitions, selectedSourceDefinitionId }) => {
   const location = useLocation();
+  const useNextConnectorCard = useExperiment("connector.updatedSetupUx");
+  const CardComponent = useNextConnectorCard ? NextConnectorCard : ConnectorCard;
 
-  const [sourceDefinitionId, setSourceDefinitionId] = useState<string | null>(
-    selectedSourceDefinitionId ?? (hasSourceDefinitionId(location.state) ? location.state.sourceDefinitionId : null)
-  );
+  const sourceDefinitionId =
+    selectedSourceDefinitionId ?? (hasSourceDefinitionId(location.state) ? location.state.sourceDefinitionId : null);
 
   const {
     data: sourceDefinitionSpecification,
@@ -52,10 +54,6 @@ export const SourceForm: React.FC<SourceFormProps> = ({ onSubmit, sourceDefiniti
     () => sourceDefinitions.find((s) => Connector.id(s) === selectedSourceDefinitionId),
     [sourceDefinitions, selectedSourceDefinitionId]
   );
-
-  const onDropDownSelect = (sourceDefinitionId: string) => {
-    setSourceDefinitionId(sourceDefinitionId);
-  };
 
   const onSubmitForm = (values: ConnectorCardValues) =>
     onSubmit({
@@ -75,14 +73,13 @@ export const SourceForm: React.FC<SourceFormProps> = ({ onSubmit, sourceDefiniti
   };
 
   return (
-    <ConnectorCard
+    <CardComponent
       formType="source"
       description={<FormattedMessage id="sources.description" />}
       headerBlock={<HeaderBlock />}
       isLoading={isLoading}
       fetchingConnectorError={sourceDefinitionError instanceof Error ? sourceDefinitionError : null}
       availableConnectorDefinitions={sourceDefinitions}
-      onConnectorDefinitionSelect={onDropDownSelect}
       selectedConnectorDefinitionSpecification={sourceDefinitionSpecification}
       selectedConnectorDefinitionId={sourceDefinitionId}
       onSubmit={onSubmitForm}

@@ -5,7 +5,6 @@
 package io.airbyte.workload.launcher.pods.factories
 
 import io.airbyte.workers.pod.FileConstants.CATALOG_FILE
-import io.airbyte.workers.pod.FileConstants.CONFIG_DIR
 import io.airbyte.workers.pod.FileConstants.CONNECTOR_CONFIG_FILE
 import io.airbyte.workers.pod.FileConstants.DEST_DIR
 import io.airbyte.workers.pod.FileConstants.EXIT_CODE_FILE
@@ -21,7 +20,7 @@ import io.airbyte.workers.pod.FileConstants.TERMINATION_MARKER_FILE
  * Factory for generating/templating the main shell scripts we use as the entry points in our containers.
  * Factor out into Singleton as necessary.
  */
-object ContainerCommandFactory {
+internal object ContainerCommandFactory {
   // WARNING: Fragile. Coupled to our conventions on building, unpacking and naming our executables.
   private const val SIDE_CAR_APPLICATION_EXECUTABLE = "/app/airbyte-app/bin/airbyte-connector-sidecar"
   private const val ORCHESTRATOR_APPLICATION_EXECUTABLE = "/app/airbyte-app/bin/airbyte-container-orchestrator"
@@ -59,9 +58,10 @@ object ContainerCommandFactory {
   fun connectorOperation(
     operationCommand: String,
     configArgs: String,
+    configDir: String,
   ) = connectorCommandWrapper(
     """
-    eval "${'$'}AIRBYTE_ENTRYPOINT $operationCommand $configArgs" > $CONFIG_DIR/$JOB_OUTPUT_FILE
+    eval "${'$'}AIRBYTE_ENTRYPOINT $operationCommand $configArgs" > $configDir/$JOB_OUTPUT_FILE
     """.trimIndent(),
   )
 

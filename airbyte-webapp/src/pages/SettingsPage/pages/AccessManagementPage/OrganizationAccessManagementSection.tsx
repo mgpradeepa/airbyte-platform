@@ -12,17 +12,11 @@ import { ExternalLink } from "components/ui/Link";
 import { SearchInput } from "components/ui/SearchInput";
 import { Text } from "components/ui/Text";
 
-import {
-  useCurrentOrganizationInfo,
-  useCurrentWorkspace,
-  useListUserInvitations,
-  useListUsersInOrganization,
-} from "core/api";
+import { useCurrentOrganizationInfo, useListUserInvitations, useListUsersInOrganization } from "core/api";
 import { FeatureItem, useFeature } from "core/services/features";
-import { isCloudApp } from "core/utils/app";
+import { useIsCloudApp } from "core/utils/app";
 import { links } from "core/utils/links";
-import { useIntent } from "core/utils/rbac";
-import { useExperiment } from "hooks/services/Experiment";
+import { Intent, useGeneratedIntent } from "core/utils/rbac";
 import { useModalService } from "hooks/services/Modal";
 
 import { AddUserModal } from "./components/AddUserModal";
@@ -33,20 +27,18 @@ import { OrganizationUsersTable } from "./OrganizationUsersTable";
 const SEARCH_PARAM = "search";
 
 export const OrganizationAccessManagementSection: React.FC = () => {
-  const workspace = useCurrentWorkspace();
-  const organization = useCurrentOrganizationInfo();
-  const canUpdateOrganizationPermissions = useIntent("UpdateOrganizationPermissions", {
-    organizationId: organization.organizationId,
-  });
+  const { organizationId, organizationName, sso } = useCurrentOrganizationInfo();
+  const canUpdateOrganizationPermissions = useGeneratedIntent(Intent.UpdateOrganizationPermissions);
   const allowExternalInvitations = useFeature(FeatureItem.ExternalInvitations);
+  const allowUpdateSsoConfig = useFeature(FeatureItem.AllowUpdateSSOConfig);
 
   const { openModal } = useModalService();
 
-  const { users } = useListUsersInOrganization(workspace.organizationId);
+  const { users } = useListUsersInOrganization(organizationId);
 
   const pendingInvitations = useListUserInvitations({
     scopeType: "organization",
-    scopeId: organization.organizationId,
+    scopeId: organizationId,
   });
 
   const unifiedOrganizationUsers = unifyOrganizationUserData(users, pendingInvitations);
@@ -56,12 +48,12 @@ export const OrganizationAccessManagementSection: React.FC = () => {
   const [userFilter, setUserFilter] = React.useState(filterParam ?? "");
   const debouncedUserFilter = useDeferredValue(userFilter);
   const { formatMessage } = useIntl();
-  const allowOrganizationInvites = useExperiment("settings.organizationRbacImprovements");
-  const showInviteUsers = !organization?.sso && allowExternalInvitations && allowOrganizationInvites;
+  const showInviteUsers = !sso && allowExternalInvitations;
+  const isCloud = useIsCloudApp();
 
   const onOpenInviteUsersModal = () =>
     openModal<void>({
-      title: formatMessage({ id: "userInvitations.create.modal.title" }, { scopeName: organization.organizationName }),
+      title: formatMessage({ id: "userInvitations.create.modal.title" }, { scopeName: organizationName }),
       content: ({ onComplete }) => <AddUserModal onSubmit={onComplete} scope="organization" />,
       size: "md",
     });
@@ -91,10 +83,10 @@ export const OrganizationAccessManagementSection: React.FC = () => {
       </FlexContainer>
       <FlexContainer justifyContent="space-between" alignItems="center">
         <FlexItem className={styles.searchInputWrapper}>
-          <SearchInput value={userFilter} onChange={(e) => setUserFilter(e.target.value)} />
+          <SearchInput value={userFilter} onChange={setUserFilter} />
         </FlexItem>
         <FlexContainer alignItems="baseline">
-          {organization?.sso && (
+          {sso && (
             <Badge variant="blue">
               <FlexContainer gap="xs" alignItems="center">
                 <Icon type="check" size="xs" />
@@ -104,7 +96,7 @@ export const OrganizationAccessManagementSection: React.FC = () => {
               </FlexContainer>
             </Badge>
           )}
-          {!organization?.sso && isCloudApp() && (
+          {!sso && isCloud && !allowUpdateSsoConfig && (
             <ExternalLink href={links.contactSales}>
               <Text size="sm" color="blue">
                 <FormattedMessage id="settings.accessManagement.enableSso" />

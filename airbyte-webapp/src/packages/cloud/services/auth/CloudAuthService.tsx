@@ -4,16 +4,19 @@ import Keycloak from "keycloak-js";
 import isEqual from "lodash/isEqual";
 import { User, UserManager, WebStorageStateStore } from "oidc-client-ts";
 import React, { PropsWithChildren, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { LoadingPage } from "components";
 
 import { HttpProblem, useGetOrCreateUser, useUpdateUser } from "core/api";
 import { UserRead } from "core/api/types/AirbyteClient";
-import { config } from "core/config";
+import { buildConfig } from "core/config";
 import { useFormatError } from "core/errors";
+import { Action, Namespace, useAnalyticsService } from "core/services/analytics";
 import { AuthContext, AuthContextApi } from "core/services/auth";
+import { EmbeddedAuthService } from "core/services/auth/EmbeddedAuthService";
 import { CloudRoutes } from "packages/cloud/cloudRoutePaths";
+import { RoutePaths } from "pages/routePaths";
 
 /**
  * The ID of the client in Keycloak that should be used by the webapp.
@@ -75,7 +78,7 @@ function createRedirectUri(realm: string) {
 function createUserManager(realm: string) {
   return new UserManager({
     userStore: new WebStorageStateStore({ store: window.localStorage }),
-    authority: `${config.keycloakBaseUrl}/auth/realms/${realm}`,
+    authority: `${buildConfig.keycloakBaseUrl}/auth/realms/${realm}`,
     client_id: KEYCLOAK_CLIENT_ID,
     redirect_uri: createRedirectUri(realm),
   });
@@ -85,7 +88,10 @@ export function initializeUserManager() {
   // First, check if there's an active redirect in progress. If so, we can pull the realm & clientId from the query params
   const searchParams = new URLSearchParams(window.location.search);
   const realm = searchParams.get("realm");
-  if (realm) {
+  const isSsoTest = searchParams.get("sso_test") === "true";
+
+  // Ignore SSO test callbacks - they should be handled by the settings page component
+  if (realm && !isSsoTest) {
     return createUserManager(realm);
   }
 
@@ -95,7 +101,7 @@ export function initializeUserManager() {
 
   // Look for a localStorage entry that matches the current backend we're connecting to
   const existingLocalStorageEntry = localStorageKeys.find((key) =>
-    key.startsWith(`oidc.user:${config.keycloakBaseUrl}`)
+    key.startsWith(`oidc.user:${buildConfig.keycloakBaseUrl}`)
   );
 
   if (existingLocalStorageEntry) {
@@ -120,19 +126,13 @@ function clearLocalStorageOidcSessions() {
 }
 
 // Removes OIDC params from URL, but doesn't remove other params that might be present
-export function createUriWithoutSsoParams(checkLicense?: boolean) {
+export function createUriWithoutSsoParams() {
   // state, code and session_state are from keycloak. realm is added by us to indicate which realm the user is signing in to.
   const SSO_SEARCH_PARAMS = ["state", "code", "session_state", "realm"];
 
   const searchParams = new URLSearchParams(window.location.search);
 
   SSO_SEARCH_PARAMS.forEach((param) => searchParams.delete(param));
-
-  // Add a searchParam to trigger a license check upon redirect
-  // This should only be passed in as true from EnterpriseAuthService
-  if (checkLicense === true) {
-    searchParams.set("checkLicense", "true");
-  }
 
   return searchParams.toString().length > 0
     ? `${window.location.origin}?${searchParams.toString()}`
@@ -146,6 +146,12 @@ function clearSsoSearchParams() {
 
 const hasAuthParams = (location = window.location): boolean => {
   const searchParams = new URLSearchParams(location.search);
+
+  // Ignore SSO test callbacks - they should be handled by the settings page component
+  if (searchParams.get("sso_test") === "true") {
+    return false;
+  }
+
   if ((searchParams.get("code") || searchParams.get("error")) && searchParams.get("state")) {
     return true;
   }
@@ -217,7 +223,7 @@ const keycloakAuthStateReducer = (state: KeycloakAuthState, action: KeycloakAuth
 const broadcastChannel = new BroadcastChannel<BroadcastEvent>("keycloak-state-sync");
 
 // Checks for a valid auth session with keycloak and returns the user if found.
-export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
+const CloudKeycloakAuthService: React.FC<PropsWithChildren> = ({ children }) => {
   const userSigninInitialized = useRef(false);
   const queryClient = useQueryClient();
   const [userManager] = useState<UserManager>(initializeUserManager);
@@ -227,6 +233,7 @@ export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
   const { mutateAsync: updateAirbyteUser } = useUpdateUser();
   const formatError = useFormatError();
   const navigate = useNavigate();
+  const analyticsService = useAnalyticsService();
 
   // Allows us to get the access token as a callback, instead of re-rendering every time a new access token arrives
   const keycloakAccessTokenRef = useRef<string | null>(null);
@@ -264,43 +271,36 @@ export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
     };
   }, [queryClient]);
 
-  // Initialization of the current user
+  // This effect initializes the authentication state. There are three possible outcomes:
+  // 1. The user is returning from an IdP login, and we have auth params in the URL. In this case, we call
+  //    signinCallback to process the auth params and get the user.
+  // 2. The user has an active session, and we can call signinSilent to get the user without any interaction.
+  // 3. Neither of the above is true, and we end up with no user and an unauthenticated state.
   useEffect(() => {
     if (userSigninInitialized.current) {
       return;
     }
-    // We strictly need to initialize once, because authorization codes are only valid for a single use
+    // We strictly want to initialize once. All other authentication state changes should be driven by userManager
+    // events below (e.g. userLoaded, userUnloaded, etc.)
     userSigninInitialized.current = true;
 
     (async (): Promise<void> => {
-      let keycloakUser: User | void | null = null;
       try {
         // Check if user is returning back from IdP login
         if (hasAuthParams()) {
-          keycloakUser = await userManager.signinCallback();
+          await userManager.signinCallback();
           clearSsoSearchParams();
           // Otherwise, check if there is a session currently
-        } else if ((keycloakUser ??= await userManager.signinSilent())) {
-          try {
-            const airbyteUser = await getAirbyteUser({
-              authUserId: keycloakUser.profile.sub,
-              getAccessToken: () => Promise.resolve(keycloakUser?.access_token ?? ""),
-            });
-            // Initialize the access token ref with a value
-            keycloakAccessTokenRef.current = keycloakUser.access_token;
-            dispatch({ type: "userLoaded", airbyteUser, keycloakUser });
-          } catch (error) {
-            handleAirbyteUserError(error);
-          }
-          // Finally, we can assume there is no active session
         } else {
-          dispatch({ type: "userUnloaded" });
+          await userManager.signinSilent();
         }
+        // If both of these checks fail, dispatch an error to the reducer. This is not necessarily a "real" error - it
+        // just means there's either no session or we could not validate it silently.
       } catch (error) {
         dispatch({ type: "error", error });
       }
     })();
-  }, [userManager, getAirbyteUser, handleAirbyteUserError]);
+  }, [userManager]);
 
   // Hook in to userManager events
   useEffect(() => {
@@ -355,29 +355,48 @@ export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
     };
   }, [userManager, getAirbyteUser, authState, handleAirbyteUserError]);
 
-  const changeRealmAndRedirectToSignin = useCallback(async (realm: string) => {
-    // This is not a security measure. The realm is publicly accessible, but we don't want users to access it via the SSO flow, because that could cause confusion.
-    if (realm === AIRBYTE_CLOUD_REALM) {
-      throw new Error("Realm inaccessible via SSO flow. Use the default login flow instead.");
-    }
-    const newUserManager = createUserManager(realm);
-    await newUserManager.signinRedirect({ extraQueryParams: { kc_idp_hint: KEYCLOAK_IDP_HINT } });
-  }, []);
+  const changeRealmAndRedirectToSignin = useCallback(
+    async (realm: string) => {
+      // This is not a security measure. The realm is publicly accessible, but we don't want users to access it via the SSO flow, because that could cause confusion.
+      if (realm === AIRBYTE_CLOUD_REALM) {
+        throw new Error("Realm inaccessible via SSO flow. Use the default login flow instead.");
+      }
+      analyticsService.track(Namespace.USER, Action.LOGIN, {
+        actionDescription: "SSO login attempted",
+        login_method: "sso",
+      });
+      const newUserManager = createUserManager(realm);
+      await newUserManager.signinRedirect({ extraQueryParams: { kc_idp_hint: KEYCLOAK_IDP_HINT } });
+    },
+    [analyticsService]
+  );
 
   const redirectToSignInWithGoogle = useCallback(async () => {
+    analyticsService.track(Namespace.USER, Action.LOGIN, {
+      actionDescription: "Google login attempted",
+      login_method: "google",
+    });
     const newUserManager = createUserManager(AIRBYTE_CLOUD_REALM);
     await newUserManager.signinRedirect({ extraQueryParams: { kc_idp_hint: "google" } });
-  }, []);
+  }, [analyticsService]);
 
   const redirectToSignInWithGithub = useCallback(async () => {
+    analyticsService.track(Namespace.USER, Action.LOGIN, {
+      actionDescription: "GitHub login attempted",
+      login_method: "github",
+    });
     const newUserManager = createUserManager(AIRBYTE_CLOUD_REALM);
     await newUserManager.signinRedirect({ extraQueryParams: { kc_idp_hint: "github" } });
-  }, []);
+  }, [analyticsService]);
 
   const redirectToSignInWithPassword = useCallback(async () => {
+    analyticsService.track(Namespace.USER, Action.LOGIN, {
+      actionDescription: "Password login attempted",
+      login_method: "password",
+    });
     const newUserManager = createUserManager(AIRBYTE_CLOUD_REALM);
     await newUserManager.signinRedirect();
-  }, []);
+  }, [analyticsService]);
 
   /**
    * Using the keycloak-js library here instead of oidc-ts, because keycloak-js knows how to route us directly to Keycloak's registration page.
@@ -385,7 +404,7 @@ export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
    */
   const redirectToRegistrationWithPassword = useCallback(async () => {
     const keycloak = new Keycloak({
-      url: `${config.keycloakBaseUrl}/auth`,
+      url: `${buildConfig.keycloakBaseUrl}/auth`,
       realm: AIRBYTE_CLOUD_REALM,
       clientId: KEYCLOAK_CLIENT_ID,
     });
@@ -468,4 +487,15 @@ export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
   }
 
   return <AuthContext.Provider value={authContextValue}>{children}</AuthContext.Provider>;
+};
+
+export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
+  const location = useLocation();
+  /* This is the route for the embedded widget.  It uses scoped auth tokens and will not have an associated user.
+      Thus, it leverages the EmbeddedAuthService to provide an empty user object to the AuthContext. */
+  if (location.pathname === `/${RoutePaths.EmbeddedWidget}`) {
+    return <EmbeddedAuthService>{children}</EmbeddedAuthService>;
+  }
+
+  return <CloudKeycloakAuthService>{children}</CloudKeycloakAuthService>;
 };

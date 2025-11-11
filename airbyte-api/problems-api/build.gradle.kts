@@ -5,7 +5,6 @@ plugins {
 }
 
 dependencies {
-  annotationProcessor(libs.micronaut.openapi)
 
   ksp(libs.micronaut.openapi)
   ksp(platform(libs.micronaut.platform))
@@ -47,13 +46,13 @@ val genAirbyteApiProblems =
   tasks.register<GenerateTask>("genAirbyteApiProblems") {
     val serverOutputDir = "${getLayout().buildDirectory.get()}/generated/api/problems"
 
-    inputs.file(airbyteApiProblemsSpecFile)
+    inputs.file(airbyteApiProblemsSpecFile).withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.dir(serverOutputDir)
 
     generatorName = "jaxrs-spec"
     inputSpec = airbyteApiProblemsSpecFile
     outputDir = serverOutputDir
-    templateDir = "$projectDir/src/main/resources/templates/jaxrs-spec-api/public_api"
+    templateDir.set("$projectDir/src/main/resources/templates/jaxrs-spec-api/public_api")
 
     packageName = "io.airbyte.api.problems"
     invokerPackage = "io.airbyte.api.problems.invoker.generated"
@@ -67,6 +66,7 @@ val genAirbyteApiProblems =
         "generatePom" to "false",
         "interfaceOnly" to "true",
         "useJakartaEe" to "true",
+        "hideGenerationTimestamp" to "true",
       )
 
     doLast {
@@ -113,13 +113,6 @@ afterEvaluate {
   }
 }
 
-// Even though Kotlin is excluded on Spotbugs, this project
-// still runs into spotbug issues. Working theory is that
-// generated code is being picked up. Disable as a short-term fix.
-tasks.named("spotbugsMain") {
-  enabled = false
-}
-
 private fun generateProblemThrowables(problemsOutputDir: String) {
   val dir = file(problemsOutputDir)
 
@@ -127,6 +120,8 @@ private fun generateProblemThrowables(problemsOutputDir: String) {
   if (!throwableDir.exists()) {
     throwableDir.mkdirs()
   }
+
+  val template = File("$projectDir/src/main/resources/templates/ThrowableProblem.kt.txt").readText()
 
   dir.walk().forEach { errorFile ->
     if (errorFile.name.endsWith("ProblemResponse.java")) {
@@ -143,10 +138,8 @@ private fun generateProblemThrowables(problemsOutputDir: String) {
       val responseClassName = "${problemName}ProblemResponse"
       val throwableClassName = "${problemName}Problem"
 
-      val template = File("$projectDir/src/main/resources/templates/ThrowableProblem.kt.txt")
       val throwableText =
         template
-          .readText()
           .replace("<problem-class-name>", responseClassName)
           .replace("<problem-throwable-class-name>", throwableClassName)
           .replace("<problem-data-class-import>", dataFieldImport)

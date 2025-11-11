@@ -14,14 +14,13 @@ import io.airbyte.config.specs.RemoteDefinitionsProvider
 import io.airbyte.data.services.ActorDefinitionService
 import io.airbyte.data.services.DeclarativeManifestImageVersionService
 import io.airbyte.featureflag.FeatureFlagClient
+import io.airbyte.micronaut.runtime.AirbyteConnectorRegistryConfig
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Factory
-import io.micronaut.context.annotation.Value
 import io.micronaut.core.util.StringUtils
 import jakarta.inject.Named
 import jakarta.inject.Singleton
 import okhttp3.OkHttpClient
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 
 /**
  * Micronaut bean factory for singletons related to seeding the database.
@@ -40,26 +39,26 @@ class SeedBeanFactory {
   ): DefinitionsProvider =
     when (seedProvider) {
       SeedDefinitionsProviderType.LOCAL -> {
-        LOGGER.info("Using local definitions provider for seeding")
+        log.info { "Using local definitions provider for seeding" }
         LocalDefinitionsProvider()
       }
       SeedDefinitionsProviderType.REMOTE -> {
-        LOGGER.info("Using remote definitions provider for seeding")
+        log.info { "Using remote definitions provider for seeding" }
         remoteDefinitionsProvider
       }
     }
 
   @Singleton
-  fun seedDefinitionsProviderType(
-    @Value("\${airbyte.connector-registry.seed-provider}") seedProvider: String,
-  ): SeedDefinitionsProviderType {
-    if (StringUtils.isEmpty(seedProvider) || LOCAL_SEED_PROVIDER.equals(seedProvider, ignoreCase = true)) {
+  fun seedDefinitionsProviderType(airbyteConnectorRegistryConfig: AirbyteConnectorRegistryConfig): SeedDefinitionsProviderType {
+    if (StringUtils.isEmpty(airbyteConnectorRegistryConfig.seedProvider) ||
+      LOCAL_SEED_PROVIDER.equals(airbyteConnectorRegistryConfig.seedProvider, ignoreCase = true)
+    ) {
       return SeedDefinitionsProviderType.LOCAL
-    } else if (REMOTE_SEED_PROVIDER.equals(seedProvider, ignoreCase = true)) {
+    } else if (REMOTE_SEED_PROVIDER.equals(airbyteConnectorRegistryConfig.seedProvider, ignoreCase = true)) {
       return SeedDefinitionsProviderType.REMOTE
     }
 
-    throw IllegalArgumentException("Invalid seed provider: $seedProvider")
+    throw IllegalArgumentException("Invalid seed provider: ${airbyteConnectorRegistryConfig.seedProvider}")
   }
 
   @Singleton
@@ -101,7 +100,7 @@ class SeedBeanFactory {
   fun okHttpClient(): OkHttpClient = OkHttpClient()
 
   companion object {
-    private val LOGGER: Logger = LoggerFactory.getLogger(SeedBeanFactory::class.java)
+    private val log = KotlinLogging.logger {}
 
     private const val LOCAL_SEED_PROVIDER = "LOCAL"
     private const val REMOTE_SEED_PROVIDER = "REMOTE"

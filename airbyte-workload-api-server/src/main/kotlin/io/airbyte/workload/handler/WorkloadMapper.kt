@@ -8,12 +8,15 @@ import io.airbyte.config.WorkloadPriority
 import io.airbyte.workload.repository.domain.Workload
 import io.airbyte.workload.repository.domain.WorkloadLabel
 import io.airbyte.workload.repository.domain.WorkloadStatus
+import io.airbyte.workload.repository.domain.WorkloadSummaryDTO
 import io.airbyte.workload.repository.domain.WorkloadType
 import java.util.UUID
 
 typealias ApiWorkloadStatus = io.airbyte.workload.api.domain.WorkloadStatus
 typealias DomainWorkload = Workload
 typealias ApiWorkload = io.airbyte.workload.api.domain.Workload
+typealias DomainWorkloadDTO = WorkloadSummaryDTO
+typealias ApiWorkloadSummary = io.airbyte.workload.api.domain.WorkloadSummary
 typealias DomainWorkloadLabel = WorkloadLabel
 typealias ApiWorkloadLabel = io.airbyte.workload.api.domain.WorkloadLabel
 typealias ApiWorkloadType = io.airbyte.config.WorkloadType
@@ -63,8 +66,10 @@ fun DomainWorkload.toApi(): ApiWorkload =
     id = this.id,
     dataplaneId = this.dataplaneId,
     status = this.status.toApi(),
-    labels = this.workloadLabels?.map { it.toApi() }?.toMutableList() ?: mutableListOf(),
+    labels = this.getLabels(),
     inputPayload = this.inputPayload,
+    workspaceId = this.workspaceId,
+    organizationId = this.organizationId,
     logPath = this.logPath,
     mutexKey = this.mutexKey,
     type = this.type.toApi(),
@@ -74,6 +79,36 @@ fun DomainWorkload.toApi(): ApiWorkload =
     signalInput = this.signalInput,
     dataplaneGroup = this.dataplaneGroup,
     priority = this.priority?.let { WorkloadPriority.fromInt(it) },
+  )
+
+/**
+ * Get labels with fallback logic: prefer labels JSONB column, fallback to workloadLabels table.
+ * This supports the dual-write migration strategy where new workloads have labels in JSONB,
+ * but old workloads still use the workload_label table.
+ */
+private fun DomainWorkload.getLabels(): MutableList<ApiWorkloadLabel> {
+  // If labels JSONB field is present, use it (new approach)
+  this.labels?.let { labelsMap ->
+    if (labelsMap.isNotEmpty()) {
+      return labelsMap
+        .map { (key, value) -> ApiWorkloadLabel(key = key, value = value) }
+        .toMutableList()
+    }
+  }
+
+  // Otherwise, fallback to workloadLabels table (legacy approach)
+  return this.workloadLabels
+    ?.map { it.toApi() }
+    ?.toMutableList()
+    ?: mutableListOf()
+}
+
+fun DomainWorkloadDTO.toApi(): ApiWorkloadSummary =
+  ApiWorkloadSummary(
+    id = id,
+    autoId = autoId.toString(),
+    status = status.toApi(),
+    deadline = deadline,
   )
 
 fun DomainWorkloadLabel.toApi(): ApiWorkloadLabel =

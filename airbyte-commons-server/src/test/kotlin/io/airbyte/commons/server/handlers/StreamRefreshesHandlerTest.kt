@@ -38,7 +38,7 @@ import java.util.UUID
 
 internal class StreamRefreshesHandlerTest {
   private val connectionService: ConnectionService = mockk()
-  private val streamRefreshesRepository: StreamRefreshesRepository = mockk()
+  private val streamRefreshesRepository: StreamRefreshesRepository = mockk(relaxed = true)
   private val eventRunner: EventRunner = mockk()
   private val actorDefinitionVersionHandler: ActorDefinitionVersionHandler = mockk()
   private val jobPersistence: JobPersistence = mockk()
@@ -93,7 +93,7 @@ internal class StreamRefreshesHandlerTest {
     every { streamRefreshesRepository.saveAll(any<List<StreamRefresh>>()) } returns listOf()
     every { eventRunner.startNewManualSync(connectionId) } returns ManualOperationResult(jobId = 0L)
     every { connectionTimelineEventHelper.currentUserIdIfExist } returns UUID.randomUUID()
-    every { connectionTimelineEventService.writeEvent(any(), any(), any()) } returns
+    every { connectionTimelineEventService.writeEvent(any(), any(), any(), any()) } returns
       ConnectionTimelineEvent(
         connectionId = UUID.randomUUID(),
         eventType = ConnectionEvent.Type.REFRESH_STARTED.toString(),
@@ -128,7 +128,7 @@ internal class StreamRefreshesHandlerTest {
     every { streamRefreshesRepository.saveAll(any<List<StreamRefresh>>()) } returns listOf()
     every { eventRunner.startNewManualSync(connectionId) } returns ManualOperationResult(jobId = 0L)
     every { connectionTimelineEventHelper.currentUserIdIfExist } returns UUID.randomUUID()
-    every { connectionTimelineEventService.writeEvent(any(), any(), any()) } returns
+    every { connectionTimelineEventService.writeEvent(any(), any(), any(), any()) } returns
       ConnectionTimelineEvent(
         connectionId = UUID.randomUUID(),
         eventType = ConnectionEvent.Type.REFRESH_STARTED.toString(),

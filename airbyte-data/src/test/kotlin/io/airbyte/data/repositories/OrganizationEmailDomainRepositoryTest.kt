@@ -56,7 +56,7 @@ internal class OrganizationEmailDomainRepositoryTest : AbstractConfigRepositoryT
 
   @Test
   fun `test find by email domain`() {
-    assert(organizationEmailDomainRepository.findByEmailDomain("airbyte.io").isEmpty())
+    assert(organizationEmailDomainRepository.findByEmailDomainIgnoreCase("airbyte.io").isEmpty())
 
     val organizationId = UUID.randomUUID()
     val orgEmailDomain =
@@ -75,9 +75,66 @@ internal class OrganizationEmailDomainRepositoryTest : AbstractConfigRepositoryT
       )
     organizationEmailDomainRepository.save(otherOrgEmailDomain)
 
-    val orgEmailDomains = organizationEmailDomainRepository.findByEmailDomain("airbyte.io")
+    val orgEmailDomains = organizationEmailDomainRepository.findByEmailDomainIgnoreCase("airbyte.io")
     assert(orgEmailDomains.size == 1)
     assert(orgEmailDomains[0].organizationId == organizationId)
     assert(orgEmailDomains[0].emailDomain == "airbyte.io")
+  }
+
+  @Test
+  fun `test find by email domain is case insensitive`() {
+    val organizationId = UUID.randomUUID()
+    val orgEmailDomain =
+      OrganizationEmailDomain(
+        organizationId = organizationId,
+        emailDomain = "Airbyte.IO",
+      )
+
+    organizationEmailDomainRepository.save(orgEmailDomain)
+
+    // Search with lowercase should find the domain stored with mixed case
+    val resultLowercase = organizationEmailDomainRepository.findByEmailDomainIgnoreCase("airbyte.io")
+    assert(resultLowercase.size == 1)
+    assert(resultLowercase[0].organizationId == organizationId)
+    assert(resultLowercase[0].emailDomain == "Airbyte.IO")
+
+    // Search with uppercase should also find it
+    val resultUppercase = organizationEmailDomainRepository.findByEmailDomainIgnoreCase("AIRBYTE.IO")
+    assert(resultUppercase.size == 1)
+    assert(resultUppercase[0].organizationId == organizationId)
+    assert(resultUppercase[0].emailDomain == "Airbyte.IO")
+
+    // Search with different mixed case should also find it
+    val resultMixed = organizationEmailDomainRepository.findByEmailDomainIgnoreCase("AiRbYtE.iO")
+    assert(resultMixed.size == 1)
+    assert(resultMixed[0].organizationId == organizationId)
+    assert(resultMixed[0].emailDomain == "Airbyte.IO")
+  }
+
+  @Test
+  fun `delete by organization id removes all related rows`() {
+    val organizationId = UUID.randomUUID()
+    val orgEmailDomain1 =
+      OrganizationEmailDomain(
+        organizationId = organizationId,
+        emailDomain = "airbyte.io",
+      )
+    organizationEmailDomainRepository.save(orgEmailDomain1)
+
+    val orgEmailDomain2 =
+      OrganizationEmailDomain(
+        organizationId = organizationId,
+        emailDomain = "airbyte.com",
+      )
+    organizationEmailDomainRepository.save(orgEmailDomain2)
+
+    organizationEmailDomainRepository.deleteByOrganizationId(organizationId)
+
+    // both of the inserted domains should be deleted
+    val emailDomains = organizationEmailDomainRepository.findByEmailDomainIgnoreCase("airbyte.io")
+    assert(emailDomains.isEmpty())
+
+    val otherEmailDomains = organizationEmailDomainRepository.findByEmailDomainIgnoreCase("airbyte.com")
+    assert(otherEmailDomains.isEmpty())
   }
 }

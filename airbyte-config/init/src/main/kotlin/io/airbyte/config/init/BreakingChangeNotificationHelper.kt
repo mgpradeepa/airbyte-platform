@@ -4,7 +4,7 @@
 
 package io.airbyte.config.init
 
-import com.google.common.annotations.VisibleForTesting
+import io.airbyte.commons.annotation.InternalForTesting
 import io.airbyte.config.ActorDefinitionBreakingChange
 import io.airbyte.config.ActorType
 import io.airbyte.config.Notification
@@ -12,12 +12,14 @@ import io.airbyte.data.services.WorkspaceService
 import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.featureflag.NotifyOnConnectorBreakingChanges
 import io.airbyte.featureflag.Workspace
+import io.airbyte.metrics.MetricClient
 import io.airbyte.notification.CustomerioNotificationClient
 import io.airbyte.notification.NotificationClient
+import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.inject.Singleton
-import org.slf4j.LoggerFactory
-import java.io.IOException
 import java.util.UUID
+
+private val log = KotlinLogging.logger {}
 
 /**
  * Helper class for notifying users about breaking changes.
@@ -25,7 +27,6 @@ import java.util.UUID
 @Singleton
 class BreakingChangeNotificationHelper {
   companion object {
-    private val log = LoggerFactory.getLogger(BreakingChangeNotificationHelper::class.java)
   }
 
   /**
@@ -49,13 +50,13 @@ class BreakingChangeNotificationHelper {
   private val notificationClient: NotificationClient
   private val featureFlagClient: FeatureFlagClient
 
-  constructor(workspaceService: WorkspaceService, featureFlagClient: FeatureFlagClient) {
+  constructor(workspaceService: WorkspaceService, featureFlagClient: FeatureFlagClient, metricClient: MetricClient? = null) {
     this.workspaceService = workspaceService
     this.featureFlagClient = featureFlagClient
-    this.notificationClient = CustomerioNotificationClient()
+    this.notificationClient = CustomerioNotificationClient(metricClient = metricClient)
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   internal constructor(
     workspaceService: WorkspaceService,
     featureFlagClient: FeatureFlagClient,
@@ -82,7 +83,7 @@ class BreakingChangeNotificationHelper {
           BreakingChangeNotificationType.DISABLED,
         )
       } catch (e: Exception) {
-        log.error("Failed to notify disabled syncs for {} {}", actorType, connectorName, e)
+        log.error(e) { "Failed to notify disabled syncs for $actorType $connectorName" }
       }
     }
   }
@@ -103,7 +104,7 @@ class BreakingChangeNotificationHelper {
           BreakingChangeNotificationType.WARNING,
         )
       } catch (e: Exception) {
-        log.error("Failed to notify breaking change warning for {} {}", actorType, connectorName, e)
+        log.error(e) { "Failed to notify breaking change warning for $actorType $connectorName" }
       }
     }
   }
@@ -119,7 +120,7 @@ class BreakingChangeNotificationHelper {
           BreakingChangeNotificationType.UPCOMING_UPGRADE,
         )
       } catch (e: Exception) {
-        log.error("Failed to notify upcoming upgrade sync for {} {}", actorType, connectorName, e)
+        log.error(e) { "Failed to notify upcoming upgrade sync for $actorType $connectorName" }
       }
     }
   }
@@ -138,12 +139,11 @@ class BreakingChangeNotificationHelper {
           BreakingChangeNotificationType.UPGRADED,
         )
       } catch (e: Exception) {
-        log.error("Failed to notify auto-upgraded sync for {} {}", actorType, connectorName, e)
+        log.error(e) { "Failed to notify auto-upgraded sync for $actorType $connectorName" }
       }
     }
   }
 
-  @Throws(IOException::class)
   private fun notifyBreakingChange(
     workspaceIds: List<UUID>,
     breakingChange: ActorDefinitionBreakingChange,
@@ -162,8 +162,7 @@ class BreakingChangeNotificationHelper {
       val notificationSettings = workspace.notificationSettings
 
       val notificationItem =
-        if (notificationType == BreakingChangeNotificationType.WARNING
-        ) {
+        if (notificationType == BreakingChangeNotificationType.WARNING) {
           notificationSettings.sendOnBreakingChangeWarning
         } else {
           notificationSettings.sendOnBreakingChangeSyncsDisabled
@@ -171,59 +170,39 @@ class BreakingChangeNotificationHelper {
 
       // Note: we only send emails for now
       // Slack can't be enabled due to not being able to handle bulk Slack notifications reliably
-      if (notificationItem != null && notificationItem.notificationType.contains(Notification.NotificationType.CUSTOMERIO)) {
+      if (notificationItem != null &&
+        workspace.email != null &&
+        notificationItem.notificationType.contains(Notification.NotificationType.CUSTOMERIO)
+      ) {
         receiverEmails.add(workspace.email)
       }
     }
 
     if (receiverEmails.isEmpty()) {
-      log.info(
-        "No emails to send for breaking change {} ({} {}). {} workspaces had disabled notifications.",
-        notificationType,
-        actorType,
-        connectorName,
-        workspaceIds.size,
-      )
+      log.info {
+        "No emails to send for breaking change $notificationType ($actorType $connectorName). ${workspaceIds.size} workspaces had disabled notifications."
+      }
       return
     }
 
     try {
       if (notificationType == BreakingChangeNotificationType.WARNING) {
-        log.info(
-          "Sending breaking change warning for {} {} v{} to {} emails",
-          actorType,
-          connectorName,
-          breakingChange.version.serialize(),
-          receiverEmails.size,
-        )
+        log.info {
+          "Sending breaking change warning for $actorType $connectorName v${breakingChange.version.serialize()} to ${receiverEmails.size} emails"
+        }
         notificationClient.notifyBreakingChangeWarning(receiverEmails, connectorName, actorType, breakingChange)
       } else if (notificationType == BreakingChangeNotificationType.DISABLED) {
-        log.info(
-          "Sending breaking change syncs disabled for {} {} to {} emails",
-          actorType,
-          connectorName,
-          receiverEmails.size,
-        )
+        log.info { "Sending breaking change syncs disabled for $actorType $connectorName to ${receiverEmails.size} emails" }
         notificationClient.notifyBreakingChangeSyncsDisabled(receiverEmails, connectorName, actorType, breakingChange)
       } else if (notificationType == BreakingChangeNotificationType.UPGRADED) {
-        log.info(
-          "Sending breaking change sync upgraded for {} {} to {} emails",
-          actorType,
-          connectorName,
-          receiverEmails.size,
-        )
+        log.info { "Sending breaking change sync upgraded for $actorType $connectorName to ${receiverEmails.size} emails" }
         notificationClient.notifyBreakingChangeSyncsUpgraded(receiverEmails, connectorName, actorType, breakingChange)
       } else if (notificationType == BreakingChangeNotificationType.UPCOMING_UPGRADE) {
-        log.info(
-          "Sending breaking change sync upcoming upgrade for {} {} to {} emails",
-          actorType,
-          connectorName,
-          receiverEmails.size,
-        )
+        log.info { "Sending breaking change sync upcoming upgrade for $actorType $connectorName to ${receiverEmails.size} emails" }
         notificationClient.notifyBreakingUpcomingAutoUpgrade(receiverEmails, connectorName, actorType, breakingChange)
       }
     } catch (e: Exception) {
-      log.error("Failed to send breaking change notification to customer.io", e)
+      log.error(e) { "Failed to send breaking change notification to customer.io" }
     }
   }
 }

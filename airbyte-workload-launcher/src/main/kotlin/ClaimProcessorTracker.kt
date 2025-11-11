@@ -4,8 +4,8 @@
 
 package io.airbyte.workload.launcher
 
-import com.google.common.annotations.VisibleForTesting
-import io.micronaut.context.annotation.Value
+import io.airbyte.commons.annotation.InternalForTesting
+import io.airbyte.micronaut.runtime.AirbyteWorkloadLauncherConfig
 import jakarta.inject.Singleton
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
@@ -17,17 +17,18 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 @Singleton
 class ClaimProcessorTracker(
-  @Value("\${airbyte.workload-launcher.temporal.default-queue.parallelism}") private val parallelism: Int,
-  @Value("\${airbyte.workload-launcher.parallelism-max-surge}") private val parallelismMaxSurge: Int = 0,
+  private val workloadLauncherConfiguration: AirbyteWorkloadLauncherConfig,
 ) {
+  private val parallelism = workloadLauncherConfiguration.parallelism.defaultQueue
+  private val parallelismMaxSurge = workloadLauncherConfiguration.parallelism.maxSurge
   private val latch: CountDownLatch = CountDownLatch(maxOf(100 - parallelismMaxSurge, 0) percentOf parallelism)
 
   // overflowCount solves the edge case where we'd have more in flight claims than the max parallelism.
   // if we CountDownLatch provided an increment, we wouldn't need this.
   private val overflowCount = AtomicInteger(0)
 
-  @VisibleForTesting
   val count: Int
+    @InternalForTesting
     get() = latch.count.toInt() + overflowCount.get()
 
   fun trackNumberOfClaimsToResume(n: Int) {

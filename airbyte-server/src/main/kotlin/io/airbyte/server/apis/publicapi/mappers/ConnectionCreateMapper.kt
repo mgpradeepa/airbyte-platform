@@ -10,7 +10,6 @@ import io.airbyte.api.model.generated.ConnectionScheduleData
 import io.airbyte.api.model.generated.ConnectionScheduleDataCron
 import io.airbyte.api.model.generated.ConnectionScheduleType
 import io.airbyte.api.model.generated.ConnectionStatus
-import io.airbyte.api.model.generated.Geography
 import io.airbyte.publicApi.server.generated.models.ConnectionCreateRequest
 import io.airbyte.server.apis.publicapi.helpers.ConnectionHelper
 import java.util.UUID
@@ -30,6 +29,7 @@ object ConnectionCreateMapper {
   fun from(
     connectionCreateRequest: ConnectionCreateRequest,
     catalogId: UUID?,
+    destinationCatalogId: UUID?,
     configuredCatalog: AirbyteCatalog?,
   ): ConnectionCreate {
     val connectionCreateOss = ConnectionCreate()
@@ -47,9 +47,6 @@ object ConnectionCreateMapper {
     if (connectionCreateRequest.prefix != null) {
       connectionCreateOss.prefix = connectionCreateRequest.prefix
     }
-
-    // set geography
-    connectionCreateOss.geography = Geography.fromValue(connectionCreateRequest.dataResidency.toString())
 
     // set schedule
     if (connectionCreateRequest.schedule != null) {
@@ -70,6 +67,9 @@ object ConnectionCreateMapper {
     }
     if (configuredCatalog != null) {
       connectionCreateOss.syncCatalog = configuredCatalog
+    }
+    if (destinationCatalogId != null) {
+      connectionCreateOss.destinationCatalogId = destinationCatalogId
     }
     if (connectionCreateRequest.status != null) {
       connectionCreateOss.status = ConnectionStatus.fromValue(connectionCreateRequest.status.toString())

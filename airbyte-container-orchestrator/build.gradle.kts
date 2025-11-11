@@ -27,23 +27,24 @@ plugins {
 val airbyteProtocol: Configuration by configurations.creating
 
 dependencies {
-  annotationProcessor(platform(libs.micronaut.platform))
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
   ksp(libs.bundles.micronaut.annotation.processor)
 
   implementation(platform(libs.micronaut.platform))
   implementation(libs.bundles.micronaut)
   implementation(libs.bundles.micronaut.cache)
   implementation(libs.bundles.micronaut.metrics)
-  implementation(libs.guava)
+  implementation(libs.google.cloud.pubsub)  // Explicitly needed for Pub/Sub Publisher usage
   implementation(libs.s3)
   implementation(libs.aws.java.sdk.s3)
   implementation(libs.sts)
   implementation(libs.kubernetes.client)
   implementation(libs.bundles.datadog)
+  implementation(libs.kotlin.coroutines)
+  implementation(libs.kotlin.coroutines.sl4j)
 
   implementation(project(":oss:airbyte-api:server-api"))
   implementation(project(":oss:airbyte-api:workload-api"))
+  implementation(project(":oss:airbyte-analytics"))
   implementation(project(":oss:airbyte-commons"))
   implementation(project(":oss:airbyte-config:config-models"))
   implementation(project(":oss:airbyte-commons-converters"))
@@ -57,16 +58,18 @@ dependencies {
   implementation(project(":oss:airbyte-config:init"))
   implementation(project(":oss:airbyte-featureflag"))
   implementation(project(":oss:airbyte-json-validation"))
+  implementation(project(":oss:airbyte-mappers"))
   implementation(libs.airbyte.protocol)
   implementation(project(":oss:airbyte-metrics:metrics-lib"))
+  implementation(project(":oss:airbyte-persistence:job-persistence"))
   implementation(project(":oss:airbyte-worker-models"))
+  implementation(libs.kotlin.coroutines)
+  implementation(libs.retrofit)
 
   runtimeOnly(libs.snakeyaml)
   runtimeOnly(libs.bundles.logback)
 
-  testAnnotationProcessor(platform(libs.micronaut.platform))
-  testAnnotationProcessor(libs.bundles.micronaut.test.annotation.processor)
-
+  testImplementation(libs.bundles.junit)
   testImplementation(libs.bundles.micronaut.test)
   testImplementation(libs.bundles.mockito.inline)
   testImplementation(libs.bundles.bouncycastle)
@@ -74,6 +77,10 @@ dependencies {
   testImplementation(libs.platform.testcontainers)
   testImplementation(libs.platform.testcontainers.postgresql)
   testImplementation(libs.mockk)
+  testImplementation(libs.mockito.kotlin)
+  testImplementation(libs.kotlin.coroutines.test)
+  testImplementation(libs.assertj.core)
+  testImplementation(libs.retrofit.mock)
 
   airbyteProtocol(libs.airbyte.protocol) {
     isTransitive = false
@@ -82,7 +89,7 @@ dependencies {
 
 airbyte {
   application {
-    mainClass = "io.airbyte.container_orchestrator.Application"
+    mainClass = "io.airbyte.container.orchestrator.ApplicationKt"
     defaultJvmArgs = listOf("-XX:+ExitOnOutOfMemoryError", "-XX:MaxRAMPercentage=75.0")
   }
   docker {

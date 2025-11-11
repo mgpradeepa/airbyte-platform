@@ -1,36 +1,30 @@
 import { useEffect } from "react";
 import { Controller, FormProvider, useForm, useFormContext } from "react-hook-form";
 import { FormattedMessage, useIntl } from "react-intl";
-import * as yup from "yup";
+import { z } from "zod";
 
 import { FormControlErrorMessage } from "components/forms/FormControl";
 import { ListBox } from "components/ui/ListBox";
 import { Text } from "components/ui/Text";
 
-import { RowFilteringMapperConfiguration, StreamMapperType } from "core/api/types/AirbyteClient";
+import {
+  MapperValidationErrorType,
+  RowFilteringMapperConfiguration,
+  StreamMapperType,
+} from "core/api/types/AirbyteClient";
 
 import { formValuesToMapperConfiguration, mapperConfigurationToFormValues } from "./formValueHelpers";
 import { autoSubmitResolver } from "../autoSubmitResolver";
 import { useMappingContext } from "../MappingContext";
 import { MappingFormTextInput, MappingRowContent, MappingRowItem } from "../MappingRow";
 import { MappingTypeListBox } from "../MappingTypeListBox";
+import { MappingValidationErrorMessage } from "../MappingValidationErrorMessage";
 import { SelectTargetField } from "../SelectTargetField";
 import { StreamMapperWithId } from "../types";
-
-export enum OperationType {
-  equal = "EQUAL",
-  not = "NOT",
-}
 
 export enum FilterCondition {
   IN = "IN",
   OUT = "OUT",
-}
-
-export interface RowFilteringMapperFormValues {
-  condition: FilterCondition;
-  fieldName: string;
-  comparisonValue: string;
 }
 
 interface RowFilteringMapperFormProps {
@@ -38,11 +32,13 @@ interface RowFilteringMapperFormProps {
   streamDescriptorKey: string;
 }
 
-const simpleSchema: yup.SchemaOf<RowFilteringMapperFormValues> = yup.object({
-  condition: yup.mixed<FilterCondition>().oneOf([FilterCondition.IN, FilterCondition.OUT]).required("form.empty.error"),
-  fieldName: yup.string().required("form.empty.error"),
-  comparisonValue: yup.string().required("form.empty.error"),
+const formSchema = z.object({
+  condition: z.nativeEnum(FilterCondition),
+  fieldName: z.string().nonempty("form.empty.error"),
+  comparisonValue: z.string().nonempty("form.empty.error"),
 });
+
+export type RowFilteringMapperFormValues = z.infer<typeof formSchema>;
 
 const createEmptyDefaultValues = (): RowFilteringMapperFormValues => ({
   condition: FilterCondition.IN,
@@ -52,12 +48,13 @@ const createEmptyDefaultValues = (): RowFilteringMapperFormValues => ({
 
 export const RowFilteringMapperForm: React.FC<RowFilteringMapperFormProps> = ({ mapping, streamDescriptorKey }) => {
   const { formatMessage } = useIntl();
-  const { updateLocalMapping, validatingStreams } = useMappingContext();
+  const { updateLocalMapping, validatingStreams, isMappingsFeatureEnabled } = useMappingContext();
   const isStreamValidating = validatingStreams.has(streamDescriptorKey);
+  const isDisabled = isStreamValidating || !isMappingsFeatureEnabled;
 
   const methods = useForm<RowFilteringMapperFormValues>({
     defaultValues: mapping ? mapperConfigurationToFormValues(mapping.mapperConfiguration) : createEmptyDefaultValues(),
-    resolver: autoSubmitResolver<RowFilteringMapperFormValues>(simpleSchema, (values) => {
+    resolver: autoSubmitResolver(formSchema, (values) => {
       const mapperConfiguration = formValuesToMapperConfiguration(values);
       updateLocalMapping(streamDescriptorKey, mapping.id, { mapperConfiguration });
     }),
@@ -69,8 +66,12 @@ export const RowFilteringMapperForm: React.FC<RowFilteringMapperFormProps> = ({ 
   }, [methods.trigger, streamDescriptorKey, updateLocalMapping, mapping.id]);
 
   useEffect(() => {
-    if (mapping.validationError && mapping.validationError.type === "FIELD_NOT_FOUND") {
-      methods.setError("fieldName", { message: mapping.validationError.message });
+    if (
+      mapping.validationError &&
+      mapping.validationError.type === MapperValidationErrorType.FIELD_NOT_FOUND &&
+      "fieldName" in methods.formState.touchedFields
+    ) {
+      methods.setError("fieldName", { message: "connections.mappings.error.FIELD_NOT_FOUND" });
     } else {
       methods.clearErrors("fieldName");
     }
@@ -86,14 +87,14 @@ export const RowFilteringMapperForm: React.FC<RowFilteringMapperFormProps> = ({ 
         <MappingRowContent>
           <MappingRowItem>
             <MappingTypeListBox
-              disabled={isStreamValidating}
+              disabled={isDisabled}
               selectedValue={StreamMapperType["row-filtering"]}
               streamDescriptorKey={streamDescriptorKey}
               mappingId={mapping.id}
             />
           </MappingRowItem>
           <MappingRowItem>
-            <SelectFilterType disabled={isStreamValidating} />
+            <SelectFilterType disabled={isDisabled} />
           </MappingRowItem>
           <MappingRowItem>
             <Text>
@@ -105,7 +106,7 @@ export const RowFilteringMapperForm: React.FC<RowFilteringMapperFormProps> = ({ 
             mappingId={mapping.id}
             streamDescriptorKey={streamDescriptorKey}
             shouldLimitTypes
-            disabled={isStreamValidating}
+            disabled={isDisabled}
           />
           <MappingRowItem>
             <Text>
@@ -114,7 +115,7 @@ export const RowFilteringMapperForm: React.FC<RowFilteringMapperFormProps> = ({ 
           </MappingRowItem>
           <MappingRowItem>
             <MappingFormTextInput
-              disabled={isStreamValidating}
+              disabled={isDisabled}
               placeholder={formatMessage({ id: "connections.mappings.value" })}
               name="comparisonValue"
               testId="comparisonValue"
@@ -122,11 +123,10 @@ export const RowFilteringMapperForm: React.FC<RowFilteringMapperFormProps> = ({ 
             <FormControlErrorMessage<RowFilteringMapperFormValues> name="comparisonValue" />
           </MappingRowItem>
         </MappingRowContent>
-        {mapping.validationError && mapping.validationError.type !== "FIELD_NOT_FOUND" && (
-          <Text italicized color="red">
-            {mapping.validationError.message}
-          </Text>
-        )}
+        <MappingValidationErrorMessage<RowFilteringMapperFormValues>
+          validationError={mapping.validationError}
+          touchedFields={methods.formState.touchedFields}
+        />
       </form>
     </FormProvider>
   );

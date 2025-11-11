@@ -4,18 +4,18 @@
 
 package io.airbyte.workload.launcher.pods.factories
 
-import io.airbyte.workers.context.WorkloadSecurityContextProvider
-import io.airbyte.workers.pod.ContainerConstants.DESTINATION_CONTAINER_NAME
-import io.airbyte.workers.pod.ContainerConstants.ORCHESTRATOR_CONTAINER_NAME
-import io.airbyte.workers.pod.ContainerConstants.SOURCE_CONTAINER_NAME
+import io.airbyte.micronaut.runtime.AirbyteWorkerConfig
 import io.airbyte.workers.pod.FileConstants.DEST_DIR
 import io.airbyte.workers.pod.FileConstants.SOURCE_DIR
+import io.airbyte.workload.launcher.constants.ContainerConstants.DESTINATION_CONTAINER_NAME
+import io.airbyte.workload.launcher.constants.ContainerConstants.ORCHESTRATOR_CONTAINER_NAME
+import io.airbyte.workload.launcher.constants.ContainerConstants.SOURCE_CONTAINER_NAME
+import io.airbyte.workload.launcher.context.WorkloadSecurityContextProvider
 import io.fabric8.kubernetes.api.model.Container
 import io.fabric8.kubernetes.api.model.ContainerBuilder
 import io.fabric8.kubernetes.api.model.EnvVar
 import io.fabric8.kubernetes.api.model.ResourceRequirements
 import io.fabric8.kubernetes.api.model.VolumeMount
-import io.micronaut.context.annotation.Value
 import jakarta.inject.Named
 import jakarta.inject.Singleton
 
@@ -25,9 +25,9 @@ class ReplicationContainerFactory(
   @Named("orchestratorEnvVars") private val orchestratorEnvVars: List<EnvVar>,
   @Named("readEnvVars") private val sourceEnvVars: List<EnvVar>,
   @Named("writeEnvVars") private val destinationEnvVars: List<EnvVar>,
-  @Value("\${airbyte.worker.job.kube.main.container.image-pull-policy}") private val imagePullPolicy: String,
+  private val airbyteWorkerConfig: AirbyteWorkerConfig,
 ) {
-  fun createOrchestrator(
+  internal fun createOrchestrator(
     resourceReqs: ResourceRequirements?,
     volumeMounts: List<VolumeMount>,
     runtimeEnvVars: List<EnvVar>,
@@ -39,7 +39,7 @@ class ReplicationContainerFactory(
     return ContainerBuilder()
       .withName(ORCHESTRATOR_CONTAINER_NAME)
       .withImage(image)
-      .withImagePullPolicy(imagePullPolicy)
+      .withImagePullPolicy(airbyteWorkerConfig.job.kubernetes.main.container.imagePullPolicy)
       .withCommand("sh", "-c", mainCommand)
       .withResources(resourceReqs)
       .withEnv(envVars)
@@ -48,7 +48,7 @@ class ReplicationContainerFactory(
       .build()
   }
 
-  fun createSource(
+  internal fun createSource(
     resourceReqs: ResourceRequirements?,
     volumeMounts: List<VolumeMount>,
     runtimeEnvVars: List<EnvVar>,
@@ -59,7 +59,7 @@ class ReplicationContainerFactory(
     return ContainerBuilder()
       .withName(SOURCE_CONTAINER_NAME)
       .withImage(image)
-      .withImagePullPolicy(imagePullPolicy)
+      .withImagePullPolicy(airbyteWorkerConfig.job.kubernetes.main.container.imagePullPolicy)
       .withCommand("sh", "-c", mainCommand)
       .withEnv(sourceEnvVars + runtimeEnvVars)
       .withWorkingDir(SOURCE_DIR)
@@ -69,7 +69,7 @@ class ReplicationContainerFactory(
       .build()
   }
 
-  fun createDestination(
+  internal fun createDestination(
     resourceReqs: ResourceRequirements?,
     volumeMounts: List<VolumeMount>,
     runtimeEnvVars: List<EnvVar>,
@@ -80,7 +80,7 @@ class ReplicationContainerFactory(
     return ContainerBuilder()
       .withName(DESTINATION_CONTAINER_NAME)
       .withImage(image)
-      .withImagePullPolicy(imagePullPolicy)
+      .withImagePullPolicy(airbyteWorkerConfig.job.kubernetes.main.container.imagePullPolicy)
       .withCommand("sh", "-c", mainCommand)
       .withEnv(destinationEnvVars + runtimeEnvVars)
       .withWorkingDir(DEST_DIR)

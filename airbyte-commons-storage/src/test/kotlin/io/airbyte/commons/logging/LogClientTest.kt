@@ -8,14 +8,14 @@ import ch.qos.logback.classic.Level
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.module.SimpleModule
 import io.airbyte.commons.jackson.MoreMappers
-import io.airbyte.commons.logging.logback.STRUCTURED_LOG_FILE_EXTENSION
 import io.airbyte.commons.storage.DocumentType
+import io.airbyte.commons.storage.STRUCTURED_LOG_FILE_EXTENSION
 import io.airbyte.commons.storage.StorageClient
 import io.airbyte.commons.storage.StorageClientFactory
-import io.airbyte.commons.storage.StorageType
 import io.airbyte.metrics.MetricAttribute
 import io.airbyte.metrics.MetricClient
 import io.airbyte.metrics.MetricsRegistry
+import io.airbyte.micronaut.runtime.StorageType
 import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.Timer
 import io.mockk.every

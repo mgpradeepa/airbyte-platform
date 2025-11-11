@@ -9,6 +9,7 @@ import io.airbyte.data.repositories.ApplicationRepository
 import io.airbyte.data.repositories.entities.Application
 import io.airbyte.data.services.ApplicationService
 import io.airbyte.data.services.impls.keycloak.ApplicationServiceKeycloakImpl
+import io.airbyte.micronaut.runtime.AirbyteAuthConfig
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Replaces
 import io.micronaut.context.annotation.Requires
@@ -19,7 +20,6 @@ import java.security.SecureRandom
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
-import kotlin.time.Duration.Companion.days
 import io.airbyte.config.Application as ApplicationDomain
 
 @Singleton
@@ -27,11 +27,11 @@ import io.airbyte.config.Application as ApplicationDomain
 @Replaces(ApplicationServiceKeycloakImpl::class)
 class ApplicationServiceDataImpl(
   private val applicationRepository: ApplicationRepository,
+  private val airbyteAuthConfig: AirbyteAuthConfig,
   private val jwtTokenGenerator: JwtTokenGenerator,
 ) : ApplicationService {
   companion object {
     const val SECRET_LENGTH = 2096
-    val TOKEN_EXPIRATION_LENGTH = 1.days.inWholeMinutes
     private val logger = KotlinLogging.logger {}
   }
 
@@ -113,9 +113,16 @@ class ApplicationServiceDataImpl(
     return jwtTokenGenerator
       .generateToken(
         mapOf(
-          "iss" to "airbyte-server",
+          "iss" to airbyteAuthConfig.tokenIssuer,
+          "aud" to "airbyte-server",
           "sub" to application.authUserId,
-          "exp" to Instant.now().plus(TOKEN_EXPIRATION_LENGTH, ChronoUnit.MINUTES).epochSecond,
+          "exp" to
+            Instant
+              .now()
+              .plus(
+                airbyteAuthConfig.tokenExpiration.applicationTokenExpirationInMinutes,
+                ChronoUnit.MINUTES,
+              ).epochSecond,
         ),
       ) // Necessary now that this is no longer optional, but I don't know under what conditions we could
       // end up here.

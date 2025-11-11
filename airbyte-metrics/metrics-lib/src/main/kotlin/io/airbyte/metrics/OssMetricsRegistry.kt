@@ -35,42 +35,6 @@ enum class OssMetricsRegistry(
   ),
 
   // Internal Metrics
-  ACTIVITY_CHECK_CONNECTION(
-    metricName = "activity_check_connection",
-    metricDescription = "increments when we start a check connection activity",
-  ),
-  ACTIVITY_DISCOVER_CATALOG(
-    metricName = "activity_discover_catalog",
-    metricDescription = "increments when we start a discover catalog activity",
-  ),
-  ACTIVITY_NORMALIZATION(
-    metricName = "activity_normalization",
-    metricDescription = "increments when we start a normalization activity",
-  ),
-  ACTIVITY_NORMALIZATION_SUMMARY_CHECK(
-    metricName = "activity_normalization_summary_check",
-    metricDescription = "increments when we start a normalization summary check activity",
-  ),
-  ACTIVITY_REFRESH_SCHEMA(
-    metricName = "activity_refresh_schema",
-    metricDescription = "increments when we start a refresh schema activity",
-  ),
-  ACTIVITY_REPLICATION(
-    metricName = "activity_replication",
-    metricDescription = "increments when we start a replication activity",
-  ),
-  ACTIVITY_SPEC(
-    metricName = "activity_spec",
-    metricDescription = "increments when we start a spec activity",
-  ),
-  ACTIVITY_SUBMIT_CHECK_DESTINATION_CONNECTION(
-    metricName = "activity_submit_check_destination_connection",
-    metricDescription = "increments when we start a submit check connection activity",
-  ),
-  ACTIVITY_SUBMIT_CHECK_SOURCE_CONNECTION(
-    metricName = "activity_submit_check_source_connection",
-    metricDescription = "increments when we start a submit check connection activity",
-  ),
   ACTIVITY_WEBHOOK_OPERATION(
     metricName = "activity_webhook_operation",
     metricDescription = "increments when we start a webhook operation activity",
@@ -106,6 +70,10 @@ enum class OssMetricsRegistry(
   API_CLIENT_REQUEST_SUCCESS(
     metricName = "api-client.success",
     metricDescription = "API client successful request count",
+  ),
+  API_TRACE(
+    metricName = "api-trace",
+    metricDescription = "",
   ),
   ATTEMPTS_CREATED(
     metricName = "attempt_created",
@@ -169,9 +137,22 @@ enum class OssMetricsRegistry(
     metricName = "cron_jobs_run",
     metricDescription = "number of cron runs by cron type",
   ),
-  CONNECTOR_REGISTRY_DEFINITION_PROCESSED( // Actually `cron` or `bootloader` based on which metric client calls the code
+  CONNECTOR_REGISTRY_DEFINITION_PROCESSED(
+    // Actually `cron` or `bootloader` based on which metric client calls the code
     metricName = "connector_registry_definition_processed",
     metricDescription = "increments when a connector registry definition is processed by the ApplyDefinitionsHelper",
+  ),
+  DATAPLANE_HEARTBEAT(
+    metricName = "dataplane_heartbeat",
+    metricDescription = "increments when a dataplane heartbeat is called",
+  ),
+  DATAPLANE_INITIALIZE(
+    metricName = "dataplane_initialize",
+    metricDescription = "increments when a dataplane initialize is called",
+  ),
+  ERROR_REPORTING_EVENT_COUNT(
+    metricName = "error_reporting_event_count",
+    metricDescription = "whenever when we report an error event",
   ),
   EST_NUM_METRICS_EMITTED_BY_REPORTER(
     metricName = "est_num_metrics_emitted_by_reporter",
@@ -180,6 +161,10 @@ enum class OssMetricsRegistry(
   INCONSISTENT_ACTIVITY_INPUT(
     metricName = "inconsistent_activity_input",
     metricDescription = "whenever we detect a mismatch between the input and the actual config",
+  ),
+  JOB_COMPLETED(
+    metricName = "job_completed",
+    metricDescription = "increments when a job is completed",
   ),
   JOB_CANCELLED_BY_RELEASE_STAGE(
     metricName = "job_cancelled_by_release_stage",
@@ -196,14 +181,6 @@ enum class OssMetricsRegistry(
   JOB_SUCCEEDED_BY_RELEASE_STAGE(
     metricName = "job_succeeded_by_release_stage",
     metricDescription = "increments when a job succeeds. jobs are double counted as this is tagged by release stage.",
-  ),
-  JSON_STRING_LENGTH(
-    metricName = "json_string_length",
-    metricDescription = "string length of a raw json string",
-  ),
-  KUBE_POD_PROCESS_CREATE_TIME_MILLISECS(
-    metricName = "kube_pod_process_create_time_millisecs",
-    metricDescription = "time taken to create a new kube pod process",
   ),
   LOG_CLIENT_FILE_LINE_BYTES_RETRIEVED(
     metricName = "log_client_file_byte_count",
@@ -229,13 +206,9 @@ enum class OssMetricsRegistry(
     metricName = "missing_apply_schema_change_input",
     metricDescription = "one expected value for applying the schema change is missing",
   ),
-  NORMALIZATION_IN_DESTINATION_CONTAINER(
-    metricName = "normalization_in_destination_container",
-    metricDescription = "increments when normalization is run in the destination container",
-  ),
-  NORMALIZATION_IN_NORMALIZATION_CONTAINER(
-    metricName = "normalization_in_normalization_container",
-    metricDescription = "increments when normalization is run in the normalization container",
+  MISSING_ORGANIZATION_ID(
+    metricName = "missing_organization_id",
+    metricDescription = "increments when organization ID cannot be fetched for an actor context",
   ),
   NUM_ABNORMAL_SCHEDULED_SYNCS_IN_LAST_DAY(
     metricName = "num_abnormal_scheduled_syncs_last_day",
@@ -285,99 +258,23 @@ enum class OssMetricsRegistry(
     metricName = "oldest_running_job_age_secs",
     metricDescription = "oldest running job in seconds",
   ),
-  ORCHESTRATOR_OUT_OF_MEMORY(
-    metricName = "orchestrator_out_of_memory",
-    metricDescription = "orchestrator out of memory error",
-  ),
-  ORCHESTRATOR_INIT_COPY_FAILURE(
-    metricName = "orchestrator_init_copy_failure",
-    metricDescription = "init files failed to copy over to orchestrator",
-  ),
   OVERALL_JOB_RUNTIME_IN_LAST_HOUR_BY_TERMINAL_STATE_SECS(
     metricName = "overall_job_runtime_in_last_hour_by_terminal_state_secs",
     metricDescription =
       "overall job runtime - scheduling and execution for all attempts - for jobs that reach terminal states in the last hour. " +
         "tagged by terminal states.",
   ),
-  RUNNING_PODS_FOUND_FOR_CONNECTION_ID(
-    metricName = "running_pods_found_for_connection_id",
-    metricDescription = "whether we found pods running for a given connection id when attempting to start a sync for that connection id",
-  ),
-  REPLICATION_THROUGHPUT_BPS(
-    metricName = "replication_throughput_bps",
-    metricDescription = "throughput of replication in bytes per second",
-  ),
-  REPLICATION_BYTES_SYNCED(
-    metricName = "replication_bytes_synced",
-    metricDescription = "number of bytes synced during replication",
-  ),
-  REPLICATION_RECORDS_SYNCED(
-    metricName = "replication_records_synced",
-    metricDescription = "number of records synced during replication",
-  ),
-  REPLICATION_WORKER_CREATED(
-    metricName = "replication_worker_created",
-    metricDescription = "number of replication worker created",
-  ),
-  REPLICATION_WORKER_EXECUTOR_SHUTDOWN_ERROR(
-    metricName = "replication_worker_executor_shutdown_error",
-    metricDescription = "number of failure to shutdown executors",
-  ),
   REPLICATION_MADE_PROGRESS(
     metricName = "replication_made_progress",
     metricDescription = "Count of replication runs that made progress. To be faceted by attributes.",
-  ),
-  RESET_REQUEST(
-    metricName = "reset_request",
-    metricDescription = "number of requested resets",
-  ),
-  SOURCE_HEARTBEAT_FAILURE(
-    metricName = "source_hearbeat_failure",
-    metricDescription = "Fail a replication because the source missed an heartbeat",
   ),
   STATE_BUFFERING(
     metricName = "state_buffering",
     metricDescription = "number of state messages being buffered before a flush",
   ),
-  STATE_COMMIT_ATTEMPT(
-    metricName = "state_commit_attempt",
-    metricDescription = "number of attempts to commit states from the orchestrator/workers",
-  ),
-  STATE_COMMIT_ATTEMPT_FAILED(
-    metricName = "state_commit_attempt_failed",
-    metricDescription = "number of failed attempts to commit states from the orchestrator/workers",
-  ),
-  STATE_COMMIT_ATTEMPT_SUCCESSFUL(
-    metricName = "state_commit_attempt_successful",
-    metricDescription = "number of successful attempts to commit states from the orchestrator/workers",
-  ),
-  STATE_COMMIT_NOT_ATTEMPTED(
-    metricName = "state_commit_not_attempted",
-    metricDescription = "number of attempts to commit states dropped due to an early termination",
-  ),
-  STATE_COMMIT_CLOSE_SUCCESSFUL(
-    metricName = "state_commit_close_successful",
-    metricDescription = "number of final to connection exiting with the a successful final state flush",
-  ),
-  STATS_COMMIT_ATTEMPT(
-    metricName = "stats_commit_attempt",
-    metricDescription = "number of attempts to commit stats from the orchestrator/workers",
-  ),
-  STATS_COMMIT_ATTEMPT_FAILED(
-    metricName = "stats_commit_attempt_failed",
-    metricDescription = "number of failed attempts to commit stats from the orchestrator/workers",
-  ),
-  STATS_COMMIT_ATTEMPT_SUCCESSFUL(
-    metricName = "stats_commit_attempt_successful",
-    metricDescription = "number of successful attempts to commit stats from the orchestrator/workers",
-  ),
-  STATS_COMMIT_NOT_ATTEMPTED(
-    metricName = "stats_commit_not_attempted",
-    metricDescription = "number of attempts to commit stats dropped due to an early termination",
-  ),
-  STATS_COMMIT_CLOSE_SUCCESSFUL(
-    metricName = "stats_commit_close_successful",
-    metricDescription = "number of final to connection exiting with the a successful final stats flush",
+  STATE_CHECKSUM_COUNT_ERROR(
+    metricName = "state_checksum_error",
+    metricDescription = "number of state checksum errors for a given connection",
   ),
   STATE_ERROR_COLLISION_FROM_SOURCE(
     metricName = "state_error_collision_from_source",
@@ -387,12 +284,6 @@ enum class OssMetricsRegistry(
     metricName = "state_error_unknown_from_destination",
     metricDescription = "number of unknown states from destination",
   ),
-  STATE_METRIC_TRACKER_ERROR(
-    metricName = "state_timestamp_metric_tracker_error",
-    metricDescription =
-      "number of syncs where the state timestamp metric tracker ran out of memory or " +
-        "was unable to match destination state message to source state message",
-  ),
   STATE_PROCESSED_FROM_DESTINATION(
     metricName = "state_processed_from_destination",
     metricDescription = "counter for number of state messages received from destination",
@@ -400,16 +291,6 @@ enum class OssMetricsRegistry(
   STATE_PROCESSED_FROM_SOURCE(
     metricName = "state_processed_from_source",
     metricDescription = "counter for number of state messages received from source",
-  ),
-
-  // TEMPORARY, delete after the migration.
-  STATS_TRACKER_IMPLEMENTATION(
-    metricName = "stats_tracker_implementation",
-    metricDescription = "count the number of syncs by implementation of stats tracker",
-  ),
-  STREAM_STATS_WRITE_NUM_QUERIES(
-    metricName = "stream_stats_write_num_queries",
-    metricDescription = "number of separate queries to update the stream stats table",
   ),
   TEMPORAL_API_TRANSIENT_ERROR_RETRY(
     metricName = "temporal_api_transient_error_retry",
@@ -431,10 +312,6 @@ enum class OssMetricsRegistry(
     metricName = "schema_change_auto_propagated",
     metricDescription = "a schema change have been propagated",
   ),
-  WORKER_DESTINATION_BUFFER_SIZE(
-    metricName = "worker_destination_buffer_size",
-    metricDescription = "the size of the replication worker destination buffer queue",
-  ),
   WORKER_DESTINATION_MESSAGE_READ(
     metricName = "worker_destination_message_read",
     metricDescription = "whenever a message is read from the destination",
@@ -446,10 +323,6 @@ enum class OssMetricsRegistry(
   WORKER_DESTINATION_NOTIFY_END_OF_INPUT_TIMEOUT(
     metricName = "notify_end_of_input_timeout",
     metricDescription = "destination call to notify end of input has timed out",
-  ),
-  WORKER_SOURCE_BUFFER_SIZE(
-    metricName = "worker_source_buffer_size",
-    metricDescription = "the size of the replication worker source buffer queue",
   ),
   WORKER_DESTINATION_ACCEPT_TIMEOUT(
     metricName = "accept_timeout",
@@ -466,6 +339,22 @@ enum class OssMetricsRegistry(
   WORKFLOWS_HEALED(
     metricName = "workflows_healed",
     metricDescription = "number of workflow the self healing cron healed",
+  ),
+  WORKLOAD_HEARTBEAT(
+    metricName = "workload_heartbeat",
+    metricDescription = "number of workload heartbeat",
+  ),
+  WORKLOAD_LAUNCHER_CRON(
+    metricName = "workload_launcher_cron",
+    metricDescription = "number of cron run for the workload_launcher",
+  ),
+  WORKLOAD_LAUNCHER_ACTIVE_LAUNCH(
+    metricName = "workload_launcher_active_launch",
+    metricDescription = "gauge of the number of workloads actively being processed by the launcher from claim to completion",
+  ),
+  WORKLOAD_LAUNCHER_CRON_DURATION(
+    metricName = "workload_launcher_cron_duration",
+    metricDescription = "duration of a run of the workload_launcher",
   ),
   WORKLOAD_MONITOR_RUN(
     metricName = "workload_monitor_run",
@@ -515,10 +404,6 @@ enum class OssMetricsRegistry(
     metricName = "workload_pods_cleaned",
     metricDescription = "Number of pods cleaned up by the pod sweeper",
   ),
-  WORKLOAD_LAUNCHER_KUBE_COPY_SUCCESS_OOM(
-    metricName = "workload_launcher_kube_copy_success_oom",
-    metricDescription = "Number of kube cp errors when trying to write the success file in the launcher",
-  ),
   JOB_OUTPUT_WRITE(
     metricName = "job_output_write",
     metricDescription = "Write a job output in the output folder",
@@ -530,14 +415,6 @@ enum class OssMetricsRegistry(
   DESTINATION_DESERIALIZATION_ERROR(
     metricName = "destination_deserialization_error",
     metricDescription = "When a sync failed with a deserialization error from the destination",
-  ),
-  HEARTBEAT_TERMINAL_SHUTDOWN(
-    metricName = "heartbeat_terminal_shutdown",
-    metricDescription = "When the heartbeat receives a terminal response from the server, and we shut down the orchestrator",
-  ),
-  HEARTBEAT_CONNECTIVITY_FAILURE_SHUTDOWN(
-    metricName = "heartbeat_connectivity_failure_shutdown",
-    metricDescription = "When the heartbeat cannot communicate with the server, and we shut down the orchestrator",
   ),
   SIDECAR_CHECK(
     metricName = "sidecar_check",
@@ -587,6 +464,10 @@ enum class OssMetricsRegistry(
     metricName = "delete_secret_default_store",
     metricDescription = "A secret was created in the default configured secret store.",
   ),
+  DELETE_SECRET(
+    metricName = "delete_secret",
+    metricDescription = "A secret was deleted from a secrets manager.",
+  ),
   CATALOG_SIZE_VALIDATION_ERROR(
     metricName = "catalog_size_validation_error",
     metricDescription = "The catalog provided by the user was larger than our limit and rejected.",
@@ -603,29 +484,9 @@ enum class OssMetricsRegistry(
     metricName = "notification_failure",
     metricDescription = "A notification failed to send",
   ),
-  REPLICATION_CONTEXT_NOT_INITIALIZED_ERROR(
-    metricName = "replication_context_not_initialized_error",
-    metricDescription = "The replication context was not initialized when it was expected to be.",
-  ),
-  DISCOVER_CATALOG_RUN_TIME(
-    metricName = "discover_catalog_run_time",
-    metricDescription = "Time to run a discover catalog before a replication.",
-  ),
-  REPLICATION_RUN_TIME(
-    metricName = "replication_run_time",
-    metricDescription = "Time to run a replication withing a sync.",
-  ),
-  SYNC_TOTAL_TIME(
-    metricName = "sync_total_time",
-    metricDescription = "Time to run a sync workflow.",
-  ),
   SYNC_WITH_EMPTY_CATALOG(
     metricName = "sync_with_empty_catalog",
     metricDescription = "Sync was started with an empty configured catalog.",
-  ),
-  CONNECTOR_FAILURE_EXIT_VALUE(
-    metricName = "connector_failure_exit_value",
-    metricDescription = "Count of failure exit codes produced by a connector.",
   ),
   CONNECTOR_STORAGE_USAGE_MB(
     metricName = "connector_storage_usage_mb",
@@ -671,6 +532,10 @@ enum class OssMetricsRegistry(
     metricName = "workload_message_published",
     metricDescription = "Count of workloads published to the queue",
   ),
+  WORKLOAD_LAUNCHER_IMAGE_PULL_FAILURE(
+    metricName = "workload_launcher_image_pull_failure",
+    metricDescription = "Count of image pull failures encountered during pod launching",
+  ),
   WORKLOAD_LAUNCHER_KUBE_API_CLIENT_ABORT(
     metricName = "kube_api_client.abort",
     metricDescription = "Count of Kubernetes API client request aborts.",
@@ -687,13 +552,21 @@ enum class OssMetricsRegistry(
     metricName = "kube_api_client.success",
     metricDescription = "Count of Kubernetes API client successful requests.",
   ),
-  WORKLOAD_LAUNCHER_POLLER_STATUS(
-    metricName = "workload_launcher_poller_status",
-    metricDescription = "tracks the status of the workload task poller",
-  ),
   WORKLOAD_LAUNCHER_REHYDRATE_FAILURE(
     metricName = "workload_launcher_rehydrate_failure",
     metricDescription = "tracks whenever the launcher rehydrate process failed",
+  ),
+  WORKLOAD_LAUNCHER_NON_STAGE_FAILURE(
+    metricName = "workload_launcher_non_stage_failure",
+    metricDescription = "Count of launcher errors occurring outside the staged pipeline",
+  ),
+  WORKLOAD_QUEUE_CONSUMER_FAILURE(
+    metricName = "workload_queue_consumer_failure",
+    metricDescription = "Count of errors in the consumer",
+  ),
+  WORKLOAD_QUEUE_MESSAGES_POLLED(
+    metricName = "workload_queue_messages_polled",
+    metricDescription = "Count of messages polled",
   ),
   WORKLOAD_QUEUE_SIZE(
     metricName = "workload_queue_size",
@@ -706,6 +579,10 @@ enum class OssMetricsRegistry(
   WORKLOAD_LAUNCH_DURATION(
     metricName = "workload_launch_duration",
     metricDescription = "tracks the duration of the launch of a workload",
+  ),
+  WORKLOAD_LAUNCH_STATUS(
+    metricName = "workload_launch_status",
+    metricDescription = "tracks the outcome of a workload launch as reported to the control plane",
   ),
   WORKLOAD_CLAIM_RESUMED(
     metricName = "workload_claim_resumed",
@@ -731,6 +608,14 @@ enum class OssMetricsRegistry(
     metricName = "workload_processed",
     metricDescription = "increments when the launcher processes a workload",
   ),
+  WORKLOAD_RUNAWAY_POD(
+    metricName = "workload_runaway_pod",
+    metricDescription = "increments when an unexpected workload is found",
+  ),
+  WORKLOAD_RUNAWAY_POD_DELETED(
+    metricName = "workload_runaway_pod_deleted",
+    metricDescription = "increments when an unexpected workload is deleted",
+  ),
   WORKLOAD_STAGE_START(
     metricName = "workload_stage_start",
     metricDescription = "increments when a workload stage starts",
@@ -743,6 +628,10 @@ enum class OssMetricsRegistry(
     metricName = "workload_stage_duration",
     metricDescription = "a distribution of the duration of a workload stage",
   ),
+  WORKLOAD_TIME_TO_TRANSITION_FROM_CREATE(
+    metricName = "workload_time_to_transition_from_create",
+    metricDescription = "time for a workload to transition to a given state",
+  ),
   PODS_DELETED_FOR_MUTEX_KEY(
     metricName = "workload_pods_deleted_for_mutex_key",
     metricDescription = "existing pods for the provided mutex key were found and deleted",
@@ -754,6 +643,74 @@ enum class OssMetricsRegistry(
   PRODUCER_TO_POD_STARTED_LATENCY_MS(
     metricName = "producer_to_pod_started_latency_ms",
     metricDescription = "the time it takes to produce a message until it is fully processed",
+  ),
+  CUSTOMER_IO_EMAIL_NOTIFICATION_SEND(
+    metricName = "customerio_email_notification_send",
+    metricDescription = "a customer io email notification was sent",
+  ),
+  DATA_OBS_OUTLIER_CHECK(
+    metricName = "data_obs_outlier_check",
+    metricDescription = "outcome of the outlier check",
+  ),
+  DATA_OBS_OUTLIER_CHECK_FRESHNESS(
+    metricName = "data_obs_outlier_check_freshness",
+    metricDescription = "outcome of the freshness outlier check (job-level metrics)",
+  ),
+  DATA_OBS_OUTLIER_CHECK_CORRECTNESS(
+    metricName = "data_obs_outlier_check_correctness",
+    metricDescription = "outcome of the correctness outlier check (stream-level metrics)",
+  ),
+  DATA_OBS_OUTLIER_CHECK_ERRORS(
+    metricName = "data_obs_outlier_check_errors",
+    metricDescription = "number of errors encountered during the outlier check",
+  ),
+  DATABASE_PRUNING_JOBS_DELETED(
+    metricName = "database_pruning_jobs_deleted",
+    metricDescription = "number of jobs deleted during database pruning operation",
+  ),
+  DATABASE_PRUNING_DURATION(
+    metricName = "database_pruning_duration",
+    metricDescription = "duration of database pruning operation",
+  ),
+  ENTITLEMENT_CHECK(
+    metricName = "entitlement_check",
+    metricDescription = "a request was made to check a single entitlement",
+  ),
+  ENTITLEMENT_ORGANIZATION_ENROLMENT(
+    metricName = "entitlements_organization_enrolment",
+    metricDescription = "an airbyte organization was added to entitlements platform",
+  ),
+  ENTITLEMENT_PLAN_ORGANIZATION_UPDATE(
+    metricName = "entitlements_organization_update",
+    metricDescription = "an airbyte organization's entitlements were updated",
+  ),
+  ENTITLEMENT_RETRIEVAL(
+    metricName = "entitlement_retrieval",
+    metricDescription = "a request was made to retrieve all entitlements for a customer",
+  ),
+  STIGG_FALLBACK(
+    metricName = "stigg_fallback",
+    metricDescription = "stigg entitlement check returned a fallback value",
+  ),
+  ENTITLEMENT_PLAN_RETRIEVAL(
+    metricName = "entitlement_plan_retrieval",
+    metricDescription = "a request was made to retrieve all entitlement plans for a customer",
+  ),
+  DATA_WORKER_USAGE_RECORDED(
+    metricName = "data_worker_usage_recorded",
+    metricDescription = "a sync was recorded in the data_worker_usage table",
+  ),
+  DOMAIN_VERIFICATION_RUN(
+    metricName = "domain_verification_run",
+    metricDescription = "number of cron runs for the domain verification cron",
+  ),
+  DOMAIN_VERIFICATION_DONE(
+    metricName = "domain_verification_done",
+    metricDescription = "number of cron runs completed run for the domain verification cron",
+  ),
+  DOMAIN_VERIFICATION_DURATION(
+    metricName = "domain_verification_duration",
+    metricDescription = "duration of a run of the domain verification cron",
   ),
   ;
 

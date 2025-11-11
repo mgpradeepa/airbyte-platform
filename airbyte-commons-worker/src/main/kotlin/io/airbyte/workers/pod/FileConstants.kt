@@ -8,7 +8,6 @@ object FileConstants {
   // dirs
   const val SOURCE_DIR = "/source"
   const val DEST_DIR = "/dest"
-  const val CONFIG_DIR = "/config"
   const val TMP = "/tmp"
 
   // pipes
@@ -26,6 +25,7 @@ object FileConstants {
   const val SIDECAR_INPUT_FILE = "sidecarInput.json"
   const val CONNECTOR_CONFIG_FILE = "connectorConfig.json"
   const val CATALOG_FILE = "catalog.json"
+  const val NAMESPACE_MAPPING_FILE = "namespace-mapping.json"
   const val INPUT_STATE_FILE = "inputState.json"
 
   // marker files

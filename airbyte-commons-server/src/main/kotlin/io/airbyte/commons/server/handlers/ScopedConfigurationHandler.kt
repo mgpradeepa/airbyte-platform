@@ -4,11 +4,11 @@
 
 package io.airbyte.commons.server.handlers
 
-import com.google.common.annotations.VisibleForTesting
 import io.airbyte.api.model.generated.ScopedConfigurationContextRequestBody
 import io.airbyte.api.model.generated.ScopedConfigurationContextResponse
 import io.airbyte.api.model.generated.ScopedConfigurationCreateRequestBody
 import io.airbyte.api.model.generated.ScopedConfigurationRead
+import io.airbyte.commons.annotation.InternalForTesting
 import io.airbyte.commons.server.errors.BadRequestException
 import io.airbyte.commons.server.handlers.helpers.ScopedConfigurationRelationshipResolver
 import io.airbyte.config.ConfigOriginType
@@ -16,7 +16,7 @@ import io.airbyte.config.ConfigResourceType
 import io.airbyte.config.ConfigScopeType
 import io.airbyte.config.ScopedConfiguration
 import io.airbyte.config.persistence.UserPersistence
-import io.airbyte.data.exceptions.ConfigNotFoundException
+import io.airbyte.data.ConfigNotFoundException
 import io.airbyte.data.services.ActorDefinitionService
 import io.airbyte.data.services.DestinationService
 import io.airbyte.data.services.OrganizationService
@@ -117,7 +117,7 @@ open class ScopedConfigurationHandler
         ConfigScopeType.ACTOR -> resolveActorName(scopeId)
       }
 
-    @VisibleForTesting
+    @InternalForTesting
     fun assertCreateRelatedRecordsExist(scopedConfigurationCreate: ScopedConfigurationCreateRequestBody) {
       try {
         getResourceName(ConfigResourceType.fromValue(scopedConfigurationCreate.resourceType), UUID.fromString(scopedConfigurationCreate.resourceId))
@@ -136,7 +136,7 @@ open class ScopedConfigurationHandler
       }
     }
 
-    @VisibleForTesting
+    @InternalForTesting
     fun buildScopedConfigurationRead(scopedConfiguration: ScopedConfiguration): ScopedConfigurationRead =
       ScopedConfigurationRead()
         .id(scopedConfiguration.id.toString())
@@ -158,7 +158,7 @@ open class ScopedConfigurationHandler
         .createdAt(scopedConfiguration.createdAt?.let { unixTimestampToOffsetDateTime(it) })
         .expiresAt(scopedConfiguration.expiresAt?.let { LocalDate.parse(it) })
 
-    @VisibleForTesting
+    @InternalForTesting
     fun buildScopedConfiguration(scopedConfigurationCreate: ScopedConfigurationCreateRequestBody): ScopedConfiguration =
       ScopedConfiguration()
         .withId(uuidGenerator.get())
@@ -176,6 +176,15 @@ open class ScopedConfigurationHandler
 
     fun listScopedConfigurations(configKey: String): List<ScopedConfigurationRead> {
       val scopedConfigurations: List<ScopedConfiguration> = scopedConfigurationService.listScopedConfigurations(configKey)
+      return scopedConfigurations
+        .stream()
+        .map { scopedConfiguration: ScopedConfiguration ->
+          buildScopedConfigurationRead(scopedConfiguration)
+        }.collect(Collectors.toList())
+    }
+
+    fun listScopedConfigurations(originType: ConfigOriginType): List<ScopedConfigurationRead> {
+      val scopedConfigurations: List<ScopedConfiguration> = scopedConfigurationService.listScopedConfigurations(originType)
       return scopedConfigurations
         .stream()
         .map { scopedConfiguration: ScopedConfiguration ->

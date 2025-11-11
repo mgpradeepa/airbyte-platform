@@ -7,20 +7,23 @@ plugins {
 }
 
 dependencies {
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
+  ksp(libs.bundles.micronaut.annotation.processor)
 
-  api(libs.bundles.micronaut.annotation)
+  implementation(libs.bundles.micronaut.annotation)
 
   implementation(project(":oss:airbyte-commons"))
+  implementation(project(":oss:airbyte-commons-micronaut"))
   implementation(project(":oss:airbyte-config:config-models"))
   implementation(project(":oss:airbyte-json-validation"))
 
   implementation(platform(libs.fasterxml))
   implementation(libs.bundles.jackson)
+  implementation(libs.kotlin.logging)
   implementation(libs.google.cloud.storage)
   implementation(libs.micronaut.cache.caffeine)
   implementation(libs.airbyte.protocol)
   implementation(libs.okhttp)
+
 
   testRuntimeOnly(libs.junit.jupiter.engine)
   testImplementation(libs.bundles.junit)
@@ -39,14 +42,8 @@ airbyte {
   }
 }
 
-val downloadConnectorRegistry =
-  tasks.register<Download>("downloadConnectorRegistry") {
-    src("https://connectors.airbyte.com/files/registries/v0/oss_registry.json")
-    dest(File(projectDir, "src/main/resources/seed/local_oss_registry.json"))
-    overwrite(true)
-    onlyIfModified(true)
-  }
-
-tasks.processResources {
-  dependsOn(downloadConnectorRegistry)
+tasks.register<Download>("downloadConnectorRegistry") {
+  src("https://connectors.airbyte.com/files/registries/v0/oss_registry.json")
+  dest(File(projectDir, "src/main/resources/seed/local_oss_registry.json"))
+  overwrite(true)
 }

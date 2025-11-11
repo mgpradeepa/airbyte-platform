@@ -5,14 +5,14 @@
 package io.airbyte.workers.helper
 
 import com.fasterxml.jackson.annotation.JsonValue
-import com.google.common.annotations.VisibleForTesting
+import io.airbyte.commons.annotation.InternalForTesting
 import io.airbyte.commons.temporal.exception.SizeLimitException
 import io.airbyte.commons.temporal.scheduling.SyncWorkflow
 import io.airbyte.config.AttemptFailureSummary
 import io.airbyte.config.FailureReason
 import io.airbyte.config.Metadata
 import io.airbyte.config.StreamDescriptor
-import io.airbyte.protocol.models.AirbyteTraceMessage
+import io.airbyte.protocol.models.v0.AirbyteTraceMessage
 import io.airbyte.workers.exception.ResourceConstraintException
 import io.airbyte.workers.exception.WorkloadLauncherException
 import io.airbyte.workers.exception.WorkloadMonitorException
@@ -21,10 +21,13 @@ import io.airbyte.workers.exception.WorkloadMonitorException
 internal const val MAX_MSG_LENGTH: Int = 50000
 internal const val MAX_STACK_TRACE_LENGTH: Int = 100000
 
+// For limiting the number of failures to prevent Temporal serialization issues
+const val MAX_FAILURES_TO_KEEP: Int = 10
+
 private const val ATTRIBUTION_MESSAGE = "Remainder truncated by the Airbyte platform."
 private const val JOB_ID_METADATA_KEY = "jobId"
 private const val ATTEMPT_NUMBER_METADATA_KEY = "attemptNumber"
-private const val TRACE_MESSAGE_METADATA_KEY = "from_trace_message"
+const val TRACE_MESSAGE_METADATA_KEY = "from_trace_message"
 private const val CONNECTOR_COMMAND_METADATA_KEY = "connector_command"
 
 /**
@@ -476,16 +479,12 @@ object FailureHelper {
       .withExternalMessage(externalMessage)
 
   /**
-   * Orders by timestamp, so earlier failures come first.
+   * Orders failures by timestamp, so earlier failures come first.
    */
   @JvmStatic
-  fun orderedFailures(failures: Set<FailureReason>): List<FailureReason> {
-    val compare = compareBy<FailureReason> { it.timestamp }
+  fun orderedFailures(failures: Collection<FailureReason>): List<FailureReason> = failures.sortedBy { it.timestamp }
 
-    return failures.sortedWith(compare)
-  }
-
-  @VisibleForTesting
+  @InternalForTesting
   @JvmStatic
   fun exceptionChainContains(
     t: Throwable?,

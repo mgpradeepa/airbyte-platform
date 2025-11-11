@@ -7,13 +7,13 @@ package io.airbyte.data.services.impls.data
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.google.cloud.storage.Blob
 import com.google.cloud.storage.Storage
-import com.google.common.annotations.VisibleForTesting
+import io.airbyte.commons.annotation.InternalForTesting
+import io.airbyte.config.CustomerTier
 import io.airbyte.data.config.OrganizationCustomerAttributesServiceConfig
-import io.airbyte.data.services.CustomerTier
 import io.airbyte.data.services.OrganizationCustomerAttributesService
+import io.airbyte.micronaut.runtime.AirbyteConnectorRolloutConfig
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.cache.annotation.Cacheable
-import io.micronaut.context.annotation.Value
 import jakarta.inject.Named
 import jakarta.inject.Singleton
 import java.util.UUID
@@ -24,14 +24,16 @@ private const val NO_ORGANIZATION_ID = "No Organization Id"
 
 @Singleton
 open class OrganizationCustomerAttributesServiceDataImpl(
-  @Value("\${airbyte.connector-rollout.gcs.bucket-name}") private val gcsBucketName: String?,
-  @Value("\${airbyte.connector-rollout.gcs.application-credentials}") private val gcsApplicationCredentials: String?,
-  @Value("\${airbyte.connector-rollout.gcs.project-id}") private val gcsProjectId: String?,
+  private val airbyteConnectorRolloutConfig: AirbyteConnectorRolloutConfig,
   @Named("customerTierStorage") private val organizationCustomerAttributeServiceConfig: OrganizationCustomerAttributesServiceConfig,
 ) : OrganizationCustomerAttributesService {
   @Cacheable("organization-customer-attributes")
   override fun getOrganizationTiers(): Map<UUID, CustomerTier?> {
-    val storage = organizationCustomerAttributeServiceConfig.provideStorage(gcsApplicationCredentials, gcsProjectId)
+    val storage =
+      organizationCustomerAttributeServiceConfig.provideStorage(
+        airbyteConnectorRolloutConfig.gcs.applicationCredentials,
+        airbyteConnectorRolloutConfig.gcs.projectId,
+      )
     if (storage == null) {
       logger.warn { "OrganizationCustomerAttributesServiceDataImpl getOrganizationTiers: GCS credentials are missing or invalid." }
       return emptyMap()
@@ -39,7 +41,9 @@ open class OrganizationCustomerAttributesServiceDataImpl(
 
     val mostRecentFile = getMostRecentFile(storage)
     return if (mostRecentFile == null) {
-      logger.warn { "OrganizationCustomerAttributesServiceDataImpl getOrganizationTiers: No files found in bucket $gcsBucketName." }
+      logger.warn {
+        "OrganizationCustomerAttributesServiceDataImpl getOrganizationTiers: No files found in bucket ${airbyteConnectorRolloutConfig.gcs.bucketName}."
+      }
       emptyMap()
     } else {
       logger.info { "OrganizationCustomerAttributesServiceDataImpl getOrganizationTiers:  most recent file: ${mostRecentFile.name}" }
@@ -47,9 +51,9 @@ open class OrganizationCustomerAttributesServiceDataImpl(
     }
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   internal fun getMostRecentFile(storage: Storage): Blob? {
-    val blobs = storage.list(gcsBucketName)?.iterateAll()
+    val blobs = storage.list(airbyteConnectorRolloutConfig.gcs.bucketName)?.iterateAll()
     return if (blobs == null) {
       null
     } else {
@@ -59,7 +63,7 @@ open class OrganizationCustomerAttributesServiceDataImpl(
     }
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   internal fun extractTimestamp(fileName: String): Long {
     logger.info { "OrganizationCustomerAttributesServiceDataImpl.extractTimestamp fileName=$fileName" }
     return try {
@@ -71,7 +75,7 @@ open class OrganizationCustomerAttributesServiceDataImpl(
     }
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   internal fun readFileContent(blob: Blob): Map<UUID, CustomerTier?> =
     try {
       val content = blob.getContent()
@@ -84,7 +88,7 @@ open class OrganizationCustomerAttributesServiceDataImpl(
       emptyMap()
     }
 
-  @VisibleForTesting
+  @InternalForTesting
   internal fun parseJsonLine(line: String): OrganizationCustomerTierMapping? {
     val jsonObject = jacksonObjectMapper().readTree(line)
     val organizationIdString = jsonObject["_airbyte_data"]?.get("organization_id")?.asText() ?: return null

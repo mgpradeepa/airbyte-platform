@@ -5,19 +5,28 @@
 package io.airbyte.server.apis.publicapi.controllers
 
 import io.airbyte.api.model.generated.AirbyteCatalog
-import io.airbyte.api.model.generated.AirbyteStreamAndConfiguration
 import io.airbyte.api.model.generated.DestinationRead
 import io.airbyte.api.model.generated.DestinationSyncMode
-import io.airbyte.api.model.generated.PermissionType
 import io.airbyte.api.model.generated.SourceDiscoverSchemaRead
-import io.airbyte.commons.server.authorization.ApiAuthorizationHelper
-import io.airbyte.commons.server.authorization.Scope
+import io.airbyte.api.problems.model.generated.ProblemConnectionLockedData
+import io.airbyte.api.problems.throwable.generated.ConnectionLockedProblem
+import io.airbyte.commons.auth.roles.AuthRoleConstants
+import io.airbyte.commons.entitlements.EntitlementService
+import io.airbyte.commons.entitlements.models.UnimitedConnectionsEntitlement
+import io.airbyte.commons.server.authorization.RoleResolver
+import io.airbyte.commons.server.errors.ApplicationErrorKnownException
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
+import io.airbyte.commons.server.services.DestinationDiscoverService
+import io.airbyte.commons.server.support.AuthenticationId
 import io.airbyte.commons.server.support.CurrentUserService
+import io.airbyte.data.helpers.WorkspaceHelper
+import io.airbyte.domain.models.ActorId
+import io.airbyte.domain.models.OrganizationId
 import io.airbyte.publicApi.server.generated.apis.PublicConnectionsApi
 import io.airbyte.publicApi.server.generated.models.ConnectionCreateRequest
 import io.airbyte.publicApi.server.generated.models.ConnectionPatchRequest
 import io.airbyte.publicApi.server.generated.models.ConnectionResponse
+import io.airbyte.publicApi.server.generated.models.ConnectionStatusEnum
 import io.airbyte.server.apis.publicapi.apiTracking.TrackingHelper
 import io.airbyte.server.apis.publicapi.constants.API_PATH
 import io.airbyte.server.apis.publicapi.constants.CONNECTIONS_PATH
@@ -41,7 +50,6 @@ import jakarta.validation.constraints.NotNull
 import jakarta.ws.rs.Path
 import jakarta.ws.rs.PathParam
 import jakarta.ws.rs.core.Response
-import java.util.Objects
 import java.util.UUID
 
 @Controller(API_PATH)
@@ -50,19 +58,18 @@ open class ConnectionsController(
   private val connectionService: ConnectionService,
   private val sourceService: SourceService,
   private val destinationService: DestinationService,
+  private val destinationDiscoverService: DestinationDiscoverService,
   private val trackingHelper: TrackingHelper,
-  private val apiAuthorizationHelper: ApiAuthorizationHelper,
+  private val roleResolver: RoleResolver,
   private val currentUserService: CurrentUserService,
+  private val workspaceHelper: WorkspaceHelper,
+  private val entitlementService: EntitlementService,
+  private val connectionDataService: io.airbyte.data.services.ConnectionService,
 ) : PublicConnectionsApi {
+  @Secured(AuthRoleConstants.WORKSPACE_EDITOR)
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
   override fun publicCreateConnection(connectionCreateRequest: ConnectionCreateRequest): Response {
-    val userId: UUID = currentUserService.currentUser.userId
-    apiAuthorizationHelper.checkWorkspacePermission(
-      connectionCreateRequest.destinationId.toString(),
-      Scope.DESTINATION,
-      userId,
-      PermissionType.WORKSPACE_EDITOR,
-    )
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     val validConnectionCreateRequest =
       trackingHelper.callWithTracker({
@@ -92,6 +99,19 @@ open class ConnectionsController(
         userId,
       )
 
+    // Check connection limit entitlement
+    val organizationId = OrganizationId(workspaceHelper.getOrganizationForWorkspace(destinationRead.workspaceId))
+    val entitlementResult = entitlementService.checkEntitlement(organizationId, UnimitedConnectionsEntitlement)
+    if (!entitlementResult.isEntitled) {
+      val nConnections = connectionDataService.countConnectionsForOrganization(organizationId.value)
+      if (nConnections >= CONNECTION_LIMIT) {
+        throw ApplicationErrorKnownException(
+          "Cannot create connection: organization has reached the maximum limit of $CONNECTION_LIMIT connections." +
+            "organizationId=${organizationId.value} nConnections=$nConnections.",
+        )
+      }
+    }
+
     // get source schema for catalog id and airbyte catalog
     val schemaResponse: SourceDiscoverSchemaRead =
       trackingHelper.callWithTracker(
@@ -104,70 +124,40 @@ open class ConnectionsController(
 
     val airbyteCatalogFromDiscoverSchema = schemaResponse.catalog
 
+    val validDestinationSyncModes =
+      trackingHelper.callWithTracker(
+        { destinationService.getDestinationSyncModes(destinationRead) },
+        CONNECTIONS_PATH,
+        POST,
+        userId,
+      ) as List<DestinationSyncMode>
+
+    // get destination_catalog_id
+    val destinationCatalogId =
+      destinationDiscoverService
+        .getDestinationCatalogIfSupported(
+          destinationId = ActorId(connectionCreateRequest.destinationId),
+          skipCache = false,
+        )?.catalogId
+
     // refer to documentation to understand what we need to do for the catalog
     // https://docs.airbyte.com/understanding-airbyte/airbyte-protocol/#catalog
-    var configuredCatalog: AirbyteCatalog? = AirbyteCatalog()
+    var configuredCatalog = AirbyteCatalog()
 
-    val validStreams: Map<String, AirbyteStreamAndConfiguration> =
-      AirbyteCatalogHelper.getValidStreams(
-        Objects.requireNonNull(airbyteCatalogFromDiscoverSchema),
-      )
-
-    // check user configs
     if (AirbyteCatalogHelper.hasStreamConfigurations(validConnectionCreateRequest.configurations)) {
-      // validate user inputs
-      // 1. Validate stream names
       trackingHelper.callWithTracker(
         {
-          validConnectionCreateRequest.configurations?.let {
-            AirbyteCatalogHelper.validateStreams(
-              airbyteCatalogFromDiscoverSchema!!,
-              it,
+          configuredCatalog.streams =
+            AirbyteCatalogHelper.getValidConfiguredStreams(
+              airbyteCatalogFromDiscoverSchema,
+              validConnectionCreateRequest.configurations!!,
+              validDestinationSyncModes,
             )
-          }
         },
         CONNECTIONS_PATH,
         POST,
         userId,
       )
-
-      // 2. Validate config for each stream.
-      for (streamConfiguration in validConnectionCreateRequest.configurations!!.streams!!) {
-        val validStreamAndConfig = validStreams[streamConfiguration.name]
-        val schemaStream = validStreamAndConfig!!.stream
-        // Validate stream config.
-        val validDestinationSyncModes =
-          trackingHelper.callWithTracker(
-            { destinationService.getDestinationSyncModes(destinationRead) },
-            CONNECTIONS_PATH,
-            POST,
-            userId,
-          ) as List<DestinationSyncMode>
-
-        trackingHelper.callWithTracker(
-          {
-            AirbyteCatalogHelper.validateStreamConfig(
-              streamConfiguration = streamConfiguration,
-              validDestinationSyncModes = validDestinationSyncModes,
-              airbyteStream = schemaStream,
-            )
-          },
-          CONNECTIONS_PATH,
-          POST,
-          userId,
-        )
-
-        // Set user inputs.
-        val updatedValidStreamAndConfig = AirbyteStreamAndConfiguration()
-        updatedValidStreamAndConfig.stream = schemaStream
-        updatedValidStreamAndConfig.config =
-          AirbyteCatalogHelper.updateAirbyteStreamConfiguration(
-            validStreamAndConfig.config,
-            schemaStream,
-            streamConfiguration,
-          )
-        configuredCatalog!!.addStreamsItem(updatedValidStreamAndConfig)
-      }
     } else {
       // no user supplied stream configs, return all streams with full refresh overwrite
       configuredCatalog = AirbyteCatalogHelper.updateAllStreamsFullRefreshOverwrite(airbyteCatalogFromDiscoverSchema!!)
@@ -180,7 +170,8 @@ open class ConnectionsController(
         connectionService.createConnection(
           validConnectionCreateRequest,
           catalogId!!,
-          finalConfiguredCatalog!!,
+          destinationCatalogId?.value,
+          finalConfiguredCatalog,
           destinationRead.workspaceId,
         )
       }, CONNECTIONS_PATH, POST, userId)!!
@@ -199,13 +190,13 @@ open class ConnectionsController(
   @Path("$CONNECTIONS_PATH/{connectionId}")
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
   override fun publicDeleteConnection(connectionId: String): Response {
-    val userId: UUID = currentUserService.currentUser.userId
-    apiAuthorizationHelper.checkWorkspacePermission(
-      connectionId,
-      Scope.CONNECTION,
-      userId,
-      PermissionType.WORKSPACE_EDITOR,
-    )
+    val userId: UUID = currentUserService.getCurrentUser().userId
+
+    roleResolver
+      .newRequest()
+      .withCurrentUser()
+      .withRef(AuthenticationId.CONNECTION_ID, connectionId)
+      .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)
 
     val connectionResponse: Any =
       trackingHelper.callWithTracker(
@@ -232,13 +223,13 @@ open class ConnectionsController(
   @Path("$CONNECTIONS_PATH/{connectionId}")
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
   override fun publicGetConnection(connectionId: String): Response {
-    val userId: UUID = currentUserService.currentUser.userId
-    apiAuthorizationHelper.checkWorkspacePermission(
-      connectionId,
-      Scope.CONNECTION,
-      userId,
-      PermissionType.WORKSPACE_READER,
-    )
+    val userId: UUID = currentUserService.getCurrentUser().userId
+
+    roleResolver
+      .newRequest()
+      .withCurrentUser()
+      .withRef(AuthenticationId.CONNECTION_ID, connectionId)
+      .requireRole(AuthRoleConstants.WORKSPACE_READER)
 
     val connectionResponse: Any =
       trackingHelper.callWithTracker({
@@ -265,13 +256,17 @@ open class ConnectionsController(
     limit: Int,
     offset: Int,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
-    apiAuthorizationHelper.checkWorkspacesPermission(
-      workspaceIds?.let { it.map { it.toString() } } ?: emptyList(),
-      Scope.WORKSPACES,
-      userId,
-      PermissionType.WORKSPACE_READER,
-    )
+    val userId: UUID = currentUserService.getCurrentUser().userId
+
+    // If workspace IDs were given, then verify the user has access to those workspaces.
+    // If none were given, then the ConnectionService will determine the workspaces for the current user.
+    if (!workspaceIds.isNullOrEmpty()) {
+      roleResolver
+        .newRequest()
+        .withCurrentUser()
+        .withWorkspaces(workspaceIds)
+        .requireRole(AuthRoleConstants.WORKSPACE_READER)
+    }
 
     val safeWorkspaceIds = workspaceIds ?: emptyList()
     val safeTagIds = tagIds ?: emptyList()
@@ -304,13 +299,13 @@ open class ConnectionsController(
     @PathParam(value = "connectionId") connectionId: String,
     @Valid @Body @NotNull connectionPatchRequest: ConnectionPatchRequest,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
-    apiAuthorizationHelper.checkWorkspacePermission(
-      connectionId,
-      Scope.CONNECTION,
-      userId,
-      PermissionType.WORKSPACE_EDITOR,
-    )
+    val userId: UUID = currentUserService.getCurrentUser().userId
+
+    roleResolver
+      .newRequest()
+      .withCurrentUser()
+      .withRef(AuthenticationId.CONNECTION_ID, connectionId)
+      .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)
 
     // validate cron timing configurations
     val validConnectionPatchRequest =
@@ -343,6 +338,14 @@ open class ConnectionsController(
         userId,
       ) as ConnectionResponse
 
+    if (currentConnection.status == ConnectionStatusEnum.LOCKED) {
+      throw ConnectionLockedProblem(
+        ProblemConnectionLockedData()
+          .connectionId(UUID.fromString(connectionId))
+          .statusReason(currentConnection.statusReason),
+      )
+    }
+
     // get destination response to retrieve workspace id as well as input for destination sync modes
     val destinationRead: DestinationRead =
       trackingHelper.callWithTracker(
@@ -352,96 +355,56 @@ open class ConnectionsController(
         userId,
       )
 
-    // get source schema for catalog id and airbyte catalog
-    val schemaResponse =
-      trackingHelper.callWithTracker(
-        { sourceService.getSourceSchema(UUID.fromString(currentConnection.sourceId), false) },
-        CONNECTIONS_WITH_ID_PATH,
-        PUT,
-        userId,
-      )
-    val catalogId = schemaResponse.catalogId
-
-    val airbyteCatalogFromDiscoverSchema = schemaResponse.catalog
-
     // refer to documentation to understand what we need to do for the catalog
     // https://docs.airbyte.com/understanding-airbyte/airbyte-protocol/#catalog
-    var configuredCatalog: AirbyteCatalog? = AirbyteCatalog()
+    var newConfiguredCatalog: AirbyteCatalog? = null
+    var catalogId: UUID? = null
 
-    val validStreams: Map<String, AirbyteStreamAndConfiguration> =
-      AirbyteCatalogHelper.getValidStreams(
-        Objects.requireNonNull(airbyteCatalogFromDiscoverSchema),
-      )
-
-    // check user configs
     if (AirbyteCatalogHelper.hasStreamConfigurations(validConnectionPatchRequest.configurations)) {
-      // validate user inputs
-      trackingHelper.callWithTracker(
-        {
-          validConnectionPatchRequest.configurations?.let {
-            AirbyteCatalogHelper.validateStreams(
-              airbyteCatalogFromDiscoverSchema!!,
-              it,
-            )
-          }
-        },
-        CONNECTIONS_WITH_ID_PATH,
-        PUT,
-        userId,
-      )
-
-      // set user inputs
-      for (streamConfiguration in validConnectionPatchRequest.configurations!!.streams!!) {
-        val validStreamAndConfig = validStreams[streamConfiguration.name]
-        val schemaStream = validStreamAndConfig!!.stream
-        // validate config for each stream
-        val validDestinationSyncModes =
-          trackingHelper.callWithTracker(
-            { destinationService.getDestinationSyncModes(destinationRead) },
-            CONNECTIONS_WITH_ID_PATH,
-            PUT,
-            userId,
-          ) as List<DestinationSyncMode>
-
+      // get source schema for catalog id and airbyte catalog
+      val schemaResponse =
         trackingHelper.callWithTracker(
-          {
-            AirbyteCatalogHelper.validateStreamConfig(
-              streamConfiguration = streamConfiguration,
-              validDestinationSyncModes = validDestinationSyncModes,
-              airbyteStream = schemaStream,
-            )
-          },
+          { sourceService.getSourceSchema(UUID.fromString(currentConnection.sourceId), false) },
           CONNECTIONS_WITH_ID_PATH,
           PUT,
           userId,
         )
+      catalogId = schemaResponse.catalogId
 
-        // set user inputs
-        val updatedValidStreamAndConfig = AirbyteStreamAndConfiguration()
-        updatedValidStreamAndConfig.stream = schemaStream
-        updatedValidStreamAndConfig.config =
-          AirbyteCatalogHelper.updateAirbyteStreamConfiguration(
-            validStreamAndConfig.config,
-            schemaStream,
-            streamConfiguration,
-          )
-        // set user configs
-        configuredCatalog!!.addStreamsItem(updatedValidStreamAndConfig)
-      }
-    } else {
-      // no user supplied stream configs, return all existing streams
-      configuredCatalog = null
+      val airbyteCatalogFromDiscoverSchema = schemaResponse.catalog
+
+      val validDestinationSyncModes =
+        trackingHelper.callWithTracker(
+          { destinationService.getDestinationSyncModes(destinationRead) },
+          CONNECTIONS_PATH,
+          POST,
+          userId,
+        ) as List<DestinationSyncMode>
+
+      newConfiguredCatalog = AirbyteCatalog()
+      trackingHelper.callWithTracker(
+        {
+          newConfiguredCatalog.streams =
+            AirbyteCatalogHelper.getValidConfiguredStreams(
+              airbyteCatalogFromDiscoverSchema,
+              validConnectionPatchRequest.configurations!!,
+              validDestinationSyncModes,
+            )
+        },
+        CONNECTIONS_PATH,
+        POST,
+        userId,
+      )
     }
 
-    val finalConfiguredCatalog = configuredCatalog
     val connectionResponse: Any =
       trackingHelper.callWithTracker(
         {
           connectionService.updateConnection(
             UUID.fromString(connectionId),
             validConnectionPatchRequest,
-            catalogId!!,
-            finalConfiguredCatalog,
+            catalogId,
+            newConfiguredCatalog,
             destinationRead.workspaceId,
           )
         },
@@ -460,5 +423,9 @@ open class ConnectionsController(
       .status(Response.Status.OK.statusCode)
       .entity(connectionResponse)
       .build()
+  }
+
+  companion object {
+    const val CONNECTION_LIMIT = 100
   }
 }

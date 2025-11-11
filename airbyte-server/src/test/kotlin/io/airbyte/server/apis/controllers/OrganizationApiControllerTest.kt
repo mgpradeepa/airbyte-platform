@@ -6,58 +6,96 @@ package io.airbyte.server.apis.controllers
 
 import io.airbyte.api.model.generated.OrganizationCreateRequestBody
 import io.airbyte.api.model.generated.OrganizationIdRequestBody
+import io.airbyte.api.model.generated.OrganizationInfoRead
 import io.airbyte.api.model.generated.OrganizationRead
 import io.airbyte.api.model.generated.OrganizationUpdateRequestBody
+import io.airbyte.api.problems.throwable.generated.ForbiddenProblem
 import io.airbyte.commons.server.handlers.OrganizationsHandler
-import io.airbyte.server.assertStatus
-import io.airbyte.server.status
-import io.micronaut.context.annotation.Requires
-import io.micronaut.context.env.Environment
-import io.micronaut.http.HttpRequest
-import io.micronaut.http.HttpStatus
-import io.micronaut.http.client.HttpClient
-import io.micronaut.http.client.annotation.Client
-import io.micronaut.test.annotation.MockBean
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest
+import io.airbyte.domain.services.dataworker.DataWorkerUsageService
+import io.airbyte.server.helpers.OrganizationAccessAuthorizationHelper
 import io.mockk.every
 import io.mockk.mockk
-import jakarta.inject.Inject
+import io.mockk.verify
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import java.util.UUID
 
-@MicronautTest
-@Requires(env = [Environment.TEST])
-internal class OrganizationApiControllerTest {
-  @Inject
-  lateinit var organizationsHandler: OrganizationsHandler
+class OrganizationApiControllerTest {
+  private lateinit var organizationsHandler: OrganizationsHandler
+  private lateinit var organizationAccessAuthorizationHelper: OrganizationAccessAuthorizationHelper
+  private lateinit var dataWorkerUsageService: DataWorkerUsageService
 
-  @Inject
-  @Client("/")
-  lateinit var client: HttpClient
+  private lateinit var organizationApiController: OrganizationApiController
 
-  @MockBean(OrganizationsHandler::class)
-  fun organizationsHandler(): OrganizationsHandler = mockk()
+  private val organizationId = UUID.randomUUID()
+  private val organizationInfoRead =
+    OrganizationInfoRead()
+      .organizationId(organizationId)
+      .organizationName("Test Organization")
+      .sso(false)
+
+  @BeforeEach
+  fun setup() {
+    organizationsHandler = mockk()
+    organizationAccessAuthorizationHelper = mockk(relaxed = true)
+    dataWorkerUsageService = mockk()
+    organizationApiController = OrganizationApiController(organizationsHandler, organizationAccessAuthorizationHelper, dataWorkerUsageService)
+
+    // Default behavior: organizationsHandler returns organization info
+    every { organizationsHandler.getOrganizationInfo(organizationId) } returns organizationInfoRead
+  }
 
   @Test
   fun testGetOrganization() {
     every { organizationsHandler.getOrganization(any()) } returns OrganizationRead()
-
-    val path = "/api/v1/organizations/get"
-    assertStatus(HttpStatus.OK, client.status(HttpRequest.POST(path, OrganizationIdRequestBody())))
+    val body = OrganizationIdRequestBody().organizationId(UUID.randomUUID())
+    assertNotNull(organizationApiController.getOrganization(body))
   }
 
   @Test
   fun testUpdateOrganization() {
     every { organizationsHandler.updateOrganization(any()) } returns OrganizationRead()
-
-    val path = "/api/v1/organizations/update"
-    assertStatus(HttpStatus.OK, client.status(HttpRequest.POST(path, OrganizationUpdateRequestBody())))
+    assertNotNull(organizationApiController.updateOrganization(OrganizationUpdateRequestBody()))
   }
 
   @Test
   fun testCreateOrganization() {
     every { organizationsHandler.createOrganization(any()) } returns OrganizationRead()
+    assertNotNull(organizationApiController.createOrganization(OrganizationCreateRequestBody()))
+  }
 
-    val path = "/api/v1/organizations/create"
-    assertStatus(HttpStatus.OK, client.status(HttpRequest.POST(path, OrganizationCreateRequestBody())))
+  @Test
+  fun `getOrgInfo succeeds when validation passes`() {
+    // Mock the currentUserService to succeed (no exception thrown)
+    every { organizationAccessAuthorizationHelper.validateOrganizationOrWorkspaceAccess(organizationId) } returns Unit
+
+    val requestBody = OrganizationIdRequestBody().organizationId(organizationId)
+
+    val result = organizationApiController.getOrgInfo(requestBody)
+
+    assertNotNull(result)
+    assertEquals(organizationId, result!!.organizationId)
+    verify(exactly = 1) { organizationsHandler.getOrganizationInfo(organizationId) }
+    verify(exactly = 1) { organizationAccessAuthorizationHelper.validateOrganizationOrWorkspaceAccess(organizationId) }
+  }
+
+  @Test
+  fun `getOrgInfo fails when validation fails`() {
+    val forbiddenException = ForbiddenProblem()
+    every { organizationAccessAuthorizationHelper.validateOrganizationOrWorkspaceAccess(organizationId) } throws forbiddenException
+
+    val requestBody = OrganizationIdRequestBody().organizationId(organizationId)
+
+    val exception =
+      assertThrows<ForbiddenProblem> {
+        organizationApiController.getOrgInfo(requestBody)
+      }
+
+    assertEquals(forbiddenException, exception)
+    verify(exactly = 0) { organizationsHandler.getOrganizationInfo(organizationId) } // Should not call handler
+    verify(exactly = 1) { organizationAccessAuthorizationHelper.validateOrganizationOrWorkspaceAccess(organizationId) }
   }
 }

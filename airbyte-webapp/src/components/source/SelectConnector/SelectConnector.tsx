@@ -15,14 +15,20 @@ import { ButtonTab, Tabs } from "components/ui/Tabs";
 import { Text } from "components/ui/Text";
 
 import { useCurrentWorkspaceLink } from "area/workspace/utils";
-import { useCurrentWorkspace, useFilters, useListEnterpriseStubsForWorkspace } from "core/api";
-import { EnterpriseSourceStub } from "core/api/types/AirbyteClient";
+import {
+  useCurrentWorkspace,
+  useFilters,
+  useListEnterpriseSourceStubs,
+  useListEnterpriseDestinationStubs,
+} from "core/api";
+import { EnterpriseConnectorStub } from "core/api/types/AirbyteClient";
 import { ConnectorDefinition, ConnectorDefinitionOrEnterpriseStub } from "core/domain/connector";
 import { isSourceDefinition } from "core/domain/connector/source";
 import { Action, Namespace, useAnalyticsService } from "core/services/analytics";
+import { useProFeaturesModal } from "core/utils/useProFeaturesModal";
 import { useModalService } from "hooks/services/Modal";
 import { useAirbyteTheme } from "hooks/theme/useAirbyteTheme";
-import { RoutePaths, SourcePaths } from "pages/routePaths";
+import { RoutePaths, SourcePaths, DestinationPaths } from "pages/routePaths";
 
 import { ConnectorList } from "./ConnectorList";
 import { RequestConnectorModal } from "./RequestConnectorModal";
@@ -57,6 +63,7 @@ export const SelectConnector: React.FC<SelectConnectorProps> = ({
   const { openModal } = useModalService();
   const trackSelectConnector = useTrackSelectConnector(connectorType);
   const trackSelectEnterpriseStub = useTrackSelectEnterpriseStub();
+  const { showProFeatureModalIfNeeded } = useProFeaturesModal("enterprise-connectors");
 
   const [showAirbyteConnectors, setShowAirbyteConnectors] = useState(true);
   const [showEnterpriseConnectors, setShowEnterpriseConnectors] = useState(true);
@@ -73,15 +80,28 @@ export const SelectConnector: React.FC<SelectConnectorProps> = ({
     }
   };
 
-  // Fetch enterprise source stubs
-  const { enterpriseSourceDefinitions } = useListEnterpriseStubsForWorkspace();
+  // Fetch enterprise stubs
+  const { enterpriseSourceDefinitions = [] } =
+    useListEnterpriseSourceStubs({
+      enabled: connectorType === "source",
+    }) || {};
+  const { enterpriseDestinationDefinitions = [] } =
+    useListEnterpriseDestinationStubs({
+      enabled: connectorType === "destination",
+    }) || {};
 
   const createLink = useCurrentWorkspaceLink();
 
-  const onSelectEnterpriseSourceStub = (definition: EnterpriseSourceStub) => {
+  const onSelectEnterpriseSourceStub = (definition: EnterpriseConnectorStub) => {
     // This is a temporary routing solution to navigate to the enterprise stub sales funnel.
     // If/when we implement enterprise connectors in the catalog, we should use onSelectConnectorDefinition.
-    navigate(createLink(`/${RoutePaths.Source}/${SourcePaths.EnterpriseSource.replace(":id", definition.id)}`));
+    navigate(createLink(`/${RoutePaths.Source}/${SourcePaths.EnterpriseSource}/${definition.id}`));
+  };
+
+  const onSelectEnterpriseDestinationStub = (definition: EnterpriseConnectorStub) => {
+    // This is a temporary routing solution to navigate to the enterprise stub sales funnel.
+    // If/when we implement enterprise connectors in the catalog, we should use onSelectConnectorDefinition.
+    navigate(createLink(`/${RoutePaths.Destination}/${DestinationPaths.EnterpriseDestination}/${definition.id}`));
   };
 
   interface BaseFilters {
@@ -95,7 +115,7 @@ export const SelectConnector: React.FC<SelectConnectorProps> = ({
   by splitting these into source_* and destination_* , we avoid a fun race condition:
     * the views in this flow are based on a mix of component states and URL params
     * filters are stored in and read from URL params
-  
+
   If the filter names are kept the same between source and destination selection,
   when in an empty workspace (no sources or destinations), and selecting a source connector after applying filters, the following happens:
     * any filters are stored in the URL
@@ -129,18 +149,31 @@ export const SelectConnector: React.FC<SelectConnectorProps> = ({
   const isSortAscending = asc === "true";
   const navigate = useNavigate();
 
-  const handleConnectorButtonClick = (definition: ConnectorDefinitionOrEnterpriseStub) => {
-    if ("isEnterprise" in definition) {
-      // Handle EnterpriseSourceStubs first
-      trackSelectEnterpriseStub(definition);
-      onSelectEnterpriseSourceStub(definition);
-    } else if (isSourceDefinition(definition)) {
-      trackSelectConnector(definition.sourceDefinitionId, definition.name);
-      onSelectConnectorDefinition(definition.sourceDefinitionId);
-    } else {
-      trackSelectConnector(definition.destinationDefinitionId, definition.name);
-      onSelectConnectorDefinition(definition.destinationDefinitionId);
+  const handleConnectorButtonClick = async (definition: ConnectorDefinitionOrEnterpriseStub) => {
+    const proceedWithConnectorSelection = () => {
+      if ("isEnterprise" in definition) {
+        // Handle EnterpriseConnectorStubs first
+        trackSelectEnterpriseStub(definition);
+        if (connectorType === "source") {
+          onSelectEnterpriseSourceStub(definition);
+        } else {
+          onSelectEnterpriseDestinationStub(definition);
+        }
+      } else if (isSourceDefinition(definition)) {
+        trackSelectConnector(definition.sourceDefinitionId, definition.name);
+        onSelectConnectorDefinition(definition.sourceDefinitionId);
+      } else {
+        trackSelectConnector(definition.destinationDefinitionId, definition.name, definition.supportsDataActivation);
+        onSelectConnectorDefinition(definition.destinationDefinitionId);
+      }
+    };
+
+    // show pro feature modal if the connector is enterprise or it's a stub of an enterprise connector
+    if ("isEnterprise" in definition || definition.enterprise === true) {
+      await showProFeatureModalIfNeeded();
     }
+
+    proceedWithConnectorSelection();
   };
 
   const onOpenRequestConnectorModal = () =>
@@ -191,16 +224,21 @@ export const SelectConnector: React.FC<SelectConnectorProps> = ({
   const connectorListWithEnterpriseStubs = useMemo<ConnectorDefinitionOrEnterpriseStub[]>(() => {
     if (connectorType === "source") {
       return [...connectorDefinitions, ...enterpriseSourceDefinitions];
+    } else if (connectorType === "destination") {
+      return [...connectorDefinitions, ...enterpriseDestinationDefinitions];
     }
     return connectorDefinitions;
-  }, [connectorType, connectorDefinitions, enterpriseSourceDefinitions]);
+  }, [connectorType, connectorDefinitions, enterpriseSourceDefinitions, enterpriseDestinationDefinitions]);
+
+  function keywordMatch(definition: ConnectorDefinitionOrEnterpriseStub, searchTerm: string) {
+    const keywords = searchTerm.toLowerCase().split(" ").filter(Boolean);
+    const name = definition.name.toLowerCase();
+    return keywords.every((keyword) => name.includes(keyword));
+  }
 
   // Filter all connectors based on search term
   const allSearchResults = useMemo(
-    () =>
-      connectorListWithEnterpriseStubs.filter((definition) =>
-        definition.name.toLowerCase().includes(searchTerm.toLocaleLowerCase())
-      ),
+    () => connectorListWithEnterpriseStubs.filter((definition) => keywordMatch(definition, searchTerm)),
     [connectorListWithEnterpriseStubs, searchTerm]
   );
 
@@ -208,7 +246,7 @@ export const SelectConnector: React.FC<SelectConnectorProps> = ({
     () =>
       allSearchResults.reduce(
         (acc, definition) => {
-          const isEnterpriseConnector = "isEnterprise" in definition;
+          const isEnterpriseConnector = "isEnterprise" in definition || definition.enterprise;
           const supportLevel = isEnterpriseConnector ? "certified" : definition.supportLevel;
 
           switch (supportLevel) {
@@ -303,7 +341,6 @@ export const SelectConnector: React.FC<SelectConnectorProps> = ({
               data-testid={`see-more-${tabName}`}
               type="button"
               variant="secondary"
-              className={styles.selectConnector__seeMore}
               onClick={() => setSelectedTab(tabName)}
             >
               <FlexContainer alignItems="center" gap="lg">
@@ -346,7 +383,7 @@ export const SelectConnector: React.FC<SelectConnectorProps> = ({
       >
         <SearchInput
           value={searchTerm}
-          onChange={(e) => setFilterValue(searchFilterName, e.target.value)}
+          onChange={(value) => setFilterValue(searchFilterName, value)}
           placeholder={formatMessage(
             { id: "connector.searchPlaceholder" },
             { tabName: getTabDisplayName(selectedTab) }

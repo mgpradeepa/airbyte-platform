@@ -4,15 +4,16 @@
 
 package io.airbyte.bootloader
 
+import io.airbyte.bootloader.K8sSecretHelper.base64Decode
 import io.airbyte.commons.random.randomAlphanumeric
-import io.fabric8.kubernetes.api.model.SecretBuilder
+import io.airbyte.commons.version.AirbyteVersion
+import io.airbyte.micronaut.runtime.AirbyteAuthConfig
+import io.fabric8.kubernetes.api.model.authorization.v1.SelfSubjectAccessReview
+import io.fabric8.kubernetes.api.model.authorization.v1.SelfSubjectAccessReviewBuilder
 import io.fabric8.kubernetes.client.KubernetesClient
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.micronaut.context.annotation.ConfigurationProperties
-import io.micronaut.context.annotation.Property
 import io.micronaut.context.annotation.Requires
 import jakarta.inject.Singleton
-import java.util.Base64
 import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
@@ -22,103 +23,94 @@ const val SECRET_LENGTH = 32
 @Singleton
 @Requires(property = "airbyte.auth.kubernetes-secret.creation-enabled", value = "true")
 class AuthKubernetesSecretInitializer(
-  @Property(name = "airbyte.auth.kubernetes-secret.name") private val secretName: String,
+  private val airbyteAuthConfig: AirbyteAuthConfig,
   private val kubernetesClient: KubernetesClient,
-  private val secretKeysConfig: AuthKubernetesSecretKeysConfig,
-  private val providedSecretValuesConfig: AuthKubernetesSecretValuesConfig,
 ) {
   fun initializeSecrets() {
     logger.info { "Initializing auth secret in Kubernetes..." }
-    val secretDataMap = getSecretDataMap()
-    val secret =
-      SecretBuilder()
-        .withNewMetadata()
-        .withName(secretName)
-        .endMetadata()
-        .addToData(secretDataMap)
-        .build()
-
-    if (kubernetesClient.secrets().withName(secretName).get() == null) {
-      logger.info { "No existing secret with name $secretName was found. Creating it..." }
-      kubernetesClient.resource(secret).create()
-    } else {
-      logger.info { "Secret with name $secretName already exists. Updating it..." }
-      kubernetesClient.resource(secret).update()
-    }
+    K8sSecretHelper.createOrUpdateSecret(kubernetesClient, airbyteAuthConfig.kubernetesSecret.name, getSecretDataMap())
     logger.info { "Finished initializing auth secret." }
+  }
+
+  fun checkAccessToSecrets(airbyteVersion: AirbyteVersion) {
+    kubernetesClient.authorization().v1().subjectAccessReview()
+    val namespace: String = kubernetesClient.namespace // the namespace the client is operating in
+    val review: SelfSubjectAccessReview =
+      SelfSubjectAccessReviewBuilder()
+        .withNewSpec()
+        .withNewResourceAttributes()
+        .withNamespace(namespace)
+        .withVerb("create")
+        .withResource("secrets")
+        .endResourceAttributes()
+        .endSpec()
+        .build()
+    val response: SelfSubjectAccessReview =
+      kubernetesClient
+        .authorization()
+        .v1()
+        .selfSubjectAccessReview()
+        .create(review)
+    if (!response.status.allowed) {
+      throw IllegalStateException(
+        """
+Upgrade to version $airbyteVersion failed. As of version 1.6 of the Airbyte Platform, we require your Service Account permissions to include access to the "secrets" resource. To learn more, please visit our documentation page at https://docs.airbyte.com/enterprise-setup/upgrade-service-account.
+        """.trimIndent(),
+      )
+    }
   }
 
   private fun getSecretDataMap(): Map<String, String> {
     val passwordValue =
-      getOrCreateSecretEncodedValue(
-        secretKeysConfig.instanceAdminPasswordSecretKey,
-        providedSecretValuesConfig.instanceAdminPassword,
+      getOrCreateSecretValue(
+        airbyteAuthConfig.kubernetesSecret.keys.instanceAdminPasswordSecretKey,
+        airbyteAuthConfig.kubernetesSecret.values.instanceAdminPassword,
         randomAlphanumeric(SECRET_LENGTH),
       )
     val clientIdValue =
-      getOrCreateSecretEncodedValue(
-        secretKeysConfig.instanceAdminClientIdSecretKey,
-        providedSecretValuesConfig.instanceAdminClientId,
+      getOrCreateSecretValue(
+        airbyteAuthConfig.kubernetesSecret.keys.instanceAdminClientIdSecretKey,
+        airbyteAuthConfig.kubernetesSecret.values.instanceAdminClientId,
         UUID.randomUUID().toString(),
       )
     val clientSecretValue =
-      getOrCreateSecretEncodedValue(
-        secretKeysConfig.instanceAdminClientSecretSecretKey,
-        providedSecretValuesConfig.instanceAdminClientSecret,
+      getOrCreateSecretValue(
+        airbyteAuthConfig.kubernetesSecret.keys.instanceAdminClientSecretSecretKey,
+        airbyteAuthConfig.kubernetesSecret.values.instanceAdminClientSecret,
         randomAlphanumeric(SECRET_LENGTH),
       )
     val jwtSignatureValue =
-      getOrCreateSecretEncodedValue(
-        secretKeysConfig.jwtSignatureSecretKey,
-        providedSecretValuesConfig.jwtSignatureSecret,
+      getOrCreateSecretValue(
+        airbyteAuthConfig.kubernetesSecret.keys.jwtSignatureSecretKey,
+        airbyteAuthConfig.kubernetesSecret.values.jwtSignatureSecret,
         randomAlphanumeric(SECRET_LENGTH),
       )
+
     return mapOf(
-      secretKeysConfig.instanceAdminPasswordSecretKey!! to passwordValue,
-      secretKeysConfig.instanceAdminClientIdSecretKey!! to clientIdValue,
-      secretKeysConfig.instanceAdminClientSecretSecretKey!! to clientSecretValue,
-      secretKeysConfig.jwtSignatureSecretKey!! to jwtSignatureValue,
+      airbyteAuthConfig.kubernetesSecret.keys.instanceAdminPasswordSecretKey to passwordValue,
+      airbyteAuthConfig.kubernetesSecret.keys.instanceAdminClientIdSecretKey to clientIdValue,
+      airbyteAuthConfig.kubernetesSecret.keys.instanceAdminClientSecretSecretKey to clientSecretValue,
+      airbyteAuthConfig.kubernetesSecret.keys.jwtSignatureSecretKey to jwtSignatureValue,
     )
   }
 
-  private fun getOrCreateSecretEncodedValue(
+  private fun getOrCreateSecretValue(
     secretKey: String?,
     providedValue: String?,
     defaultValue: String,
   ): String {
     if (!providedValue.isNullOrBlank()) {
-      // if a value is provided directly, base64 encode it and return it, regardless of what may be
-      // present in the secret.
       logger.info { "Using provided value for secret key $secretKey" }
-      return providedValue.let { Base64.getEncoder().encodeToString(it.toByteArray()) }
+      return providedValue
     } else {
-      val secret = kubernetesClient.secrets().withName(secretName).get()
+      val secret = kubernetesClient.secrets().withName(airbyteAuthConfig.kubernetesSecret.name).get()
       if (secret != null && secretKey != null && secret.data.containsKey(secretKey)) {
-        // if a value is present in the secret, just return it because it is already base64 encoded,
-        // and will not be overwritten.
         logger.info { "Using existing value for secret key $secretKey" }
-        return secret.data[secretKey]!!
+        return base64Decode(secret.data[secretKey]!!)
       } else {
-        // if no value is provided or present in the secret, generate a new value and return it.
         logger.info { "Using generated/default value for secret key $secretKey" }
-        return defaultValue.let { Base64.getEncoder().encodeToString(it.toByteArray()) }
+        return defaultValue
       }
     }
   }
-}
-
-@ConfigurationProperties("airbyte.auth.kubernetes-secret.keys")
-open class AuthKubernetesSecretKeysConfig {
-  var instanceAdminPasswordSecretKey: String? = null
-  var instanceAdminClientIdSecretKey: String? = null
-  var instanceAdminClientSecretSecretKey: String? = null
-  var jwtSignatureSecretKey: String? = null
-}
-
-@ConfigurationProperties("airbyte.auth.kubernetes-secret.values")
-open class AuthKubernetesSecretValuesConfig {
-  var instanceAdminPassword: String? = null
-  var instanceAdminClientId: String? = null
-  var instanceAdminClientSecret: String? = null
-  var jwtSignatureSecret: String? = null
 }

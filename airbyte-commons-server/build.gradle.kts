@@ -4,10 +4,7 @@ plugins {
 }
 
 dependencies {
-  annotationProcessor(platform(libs.micronaut.platform))
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
-  annotationProcessor(libs.micronaut.jaxrs.processor)
-
+  ksp(project(":oss:airbyte-configuration-processor"))
   ksp(platform(libs.micronaut.platform))
   ksp(libs.bundles.micronaut.annotation.processor)
   ksp(libs.micronaut.jaxrs.processor)
@@ -32,11 +29,15 @@ dependencies {
   implementation(libs.reactor.core)
   implementation(libs.jakarta.ws.rs.api)
   implementation(libs.kubernetes.client)
-  implementation(libs.guava)
   implementation(libs.cron.utils)
 
+  // CBServer dependencies - should probably move to deps.toml
+  implementation("org.kohsuke:github-api:1.327")
+  implementation("org.yaml:snakeyaml:2.2")
+  implementation("io.pebbletemplates:pebble:3.2.4")
+
   implementation(project(":oss:airbyte-analytics"))
-  implementation(project(":oss:airbyte-api:connector-builder-api"))
+  implementation(project(":oss:airbyte-api:manifest-server-api"))
   implementation(project(":oss:airbyte-api:problems-api"))
   implementation(project(":oss:airbyte-api:server-api"))
   implementation(project(":oss:airbyte-commons"))
@@ -44,6 +45,7 @@ dependencies {
   implementation(project(":oss:airbyte-commons-converters"))
   implementation(project(":oss:airbyte-commons-entitlements"))
   implementation(project(":oss:airbyte-commons-license"))
+  implementation(project(":oss:airbyte-commons-micronaut"))
   implementation(project(":oss:airbyte-commons-protocol"))
   implementation(project(":oss:airbyte-commons-storage"))
   implementation(project(":oss:airbyte-commons-temporal"))
@@ -56,6 +58,9 @@ dependencies {
   implementation(project(":oss:airbyte-config:specs"))
   implementation(project(":oss:airbyte-connector-rollout-client"))
   implementation(project(":oss:airbyte-connector-rollout-shared"))
+  implementation(project(":oss:airbyte-db:jooq"))
+  implementation(project(":oss:airbyte-domain:services"))
+  implementation(project(":oss:airbyte-domain:models"))
   implementation(project(":oss:airbyte-data"))
   implementation(project(":oss:airbyte-featureflag"))
   implementation(project(":oss:airbyte-mappers"))
@@ -69,8 +74,6 @@ dependencies {
   implementation(project(":oss:airbyte-notification"))
   implementation(project(":oss:airbyte-csp-check"))
 
-  testAnnotationProcessor(libs.bundles.micronaut.test.annotation.processor)
-
   kspTest(platform(libs.micronaut.platform))
   kspTest(libs.bundles.micronaut.test.annotation.processor)
 
@@ -80,6 +83,7 @@ dependencies {
   testImplementation(libs.platform.testcontainers.postgresql)
   testImplementation(libs.mockwebserver)
   testImplementation(libs.mockito.inline)
+  testImplementation(libs.mockito.kotlin)
   testImplementation(libs.bundles.junit)
   testImplementation(libs.assertj.core)
   testImplementation(libs.junit.pioneer)
@@ -90,13 +94,6 @@ dependencies {
   testImplementation(libs.bundles.kotest)
 
   testRuntimeOnly(libs.junit.jupiter.engine)
-}
-
-// Even though Kotlin is excluded on Spotbugs, this project
-// still runs into spotbug issues. Working theory is that
-// generated code is being picked up. Disable as a short-term fix.
-tasks.named("spotbugsMain") {
-  enabled = false
 }
 
 tasks.withType<Jar> {

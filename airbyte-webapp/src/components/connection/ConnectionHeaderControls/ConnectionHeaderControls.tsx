@@ -6,15 +6,14 @@ import { Box } from "components/ui/Box";
 import { Button } from "components/ui/Button";
 import { FlexContainer } from "components/ui/Flex";
 import { SwitchNext } from "components/ui/SwitchNext";
-import { Text } from "components/ui/Text";
 import { Tooltip } from "components/ui/Tooltip";
 
-import { useCurrentConnection, useCurrentWorkspace } from "core/api";
+import { useCurrentConnection } from "core/api";
 import { ConnectionStatus, ConnectionSyncStatus } from "core/api/types/AirbyteClient";
-import { Intent, useGeneratedIntent, useIntent } from "core/utils/rbac";
+import { useFormMode } from "core/services/ui/FormModeContext";
+import { Intent, useGeneratedIntent } from "core/utils/rbac";
 import { useSchemaChanges } from "hooks/connection/useSchemaChanges";
 import { useConnectionEditService } from "hooks/services/ConnectionEdit/ConnectionEditService";
-import { useConnectionFormService } from "hooks/services/ConnectionForm/ConnectionFormService";
 import { ConnectionRoutePaths } from "pages/routePaths";
 
 import styles from "./ConnectionHeaderControls.module.scss";
@@ -24,15 +23,14 @@ import { useConnectionSyncContext } from "../ConnectionSync/ConnectionSyncContex
 import { FreeHistoricalSyncIndicator } from "../EnabledControl/FreeHistoricalSyncIndicator";
 
 export const ConnectionHeaderControls: React.FC = () => {
-  const { mode } = useConnectionFormService();
+  const { mode } = useFormMode();
   const connection = useCurrentConnection();
   const { updateConnectionStatus, connectionUpdating, schemaRefreshing } = useConnectionEditService();
   const { hasBreakingSchemaChange } = useSchemaChanges(connection.schemaChange);
   const navigate = useNavigate();
-  const { workspaceId } = useCurrentWorkspace();
   const connectionStatus = useConnectionStatus(connection.connectionId);
   const canSyncConnection = useGeneratedIntent(Intent.RunAndCancelConnectionSyncAndRefresh);
-  const canClearData = useIntent("ClearData", { workspaceId });
+  const canClearData = useGeneratedIntent(Intent.CreateOrEditConnection);
 
   const {
     jobRefreshRunning,
@@ -107,11 +105,9 @@ export const ConnectionHeaderControls: React.FC = () => {
           disabled={isSyncActionsDisabled}
           icon={syncStarting || clearStarting || refreshStarting ? "loading" : "sync"}
           iconSize="sm"
-          iconColor="primary"
+          className={styles.clearPrimaryButton}
         >
-          <Text size="md" color="blue" bold>
-            <FormattedMessage id="connection.startSync" />
-          </Text>
+          <FormattedMessage id="connection.startSync" />
         </Button>
       )}
       {connectionStatus.status === ConnectionSyncStatus.running && cancelJob && (
@@ -121,30 +117,46 @@ export const ConnectionHeaderControls: React.FC = () => {
           data-testid="cancel-sync-button"
           variant="clear"
           icon={cancelStarting ? "loading" : "cross"}
-          iconColor="error"
+          className={styles.clearErrorButton}
         >
-          <Text size="md" color="red" bold>
-            <FormattedMessage
-              id={
-                clearStarting || jobClearRunning
-                  ? "connection.cancelDataClear"
-                  : jobRefreshRunning || refreshStarting
-                  ? "connection.cancelRefresh"
-                  : "connection.cancelSync"
-              }
-            />
-          </Text>
+          <FormattedMessage
+            id={
+              clearStarting || jobClearRunning
+                ? "connection.cancelDataClear"
+                : jobRefreshRunning || refreshStarting
+                ? "connection.cancelRefresh"
+                : "connection.cancelSync"
+            }
+          />
         </Button>
       )}
       <Box p="md">
-        <SwitchNext
-          onChange={onChangeStatus}
-          checked={connection.status === ConnectionStatus.active}
-          loading={connectionUpdating}
-          disabled={isSwitchDisabled}
-          className={styles.switch}
-          testId="connection-status-switch"
-        />
+        {connection.status === ConnectionStatus.locked ? (
+          <Tooltip
+            control={
+              <SwitchNext
+                onChange={onChangeStatus}
+                checked={false}
+                loading={connectionUpdating}
+                disabled
+                showLock
+                className={styles.switch}
+                testId="connection-status-switch"
+              />
+            }
+          >
+            <FormattedMessage id="connection.lockedTooltip" />
+          </Tooltip>
+        ) : (
+          <SwitchNext
+            onChange={onChangeStatus}
+            checked={connection.status === ConnectionStatus.active}
+            loading={connectionUpdating}
+            disabled={isSwitchDisabled}
+            className={styles.switch}
+            testId="connection-status-switch"
+          />
+        )}
       </Box>
     </FlexContainer>
   );

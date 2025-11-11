@@ -11,6 +11,7 @@ import io.airbyte.api.client.model.generated.DeploymentMetadataRead
 import io.airbyte.commons.version.AirbyteVersion
 import io.airbyte.config.Configs
 import io.airbyte.config.ScopeType
+import io.airbyte.micronaut.runtime.AirbyteConfig
 import io.micronaut.http.HttpHeaders
 import io.micronaut.http.HttpRequest
 import io.micronaut.http.context.ServerRequestContext
@@ -24,7 +25,7 @@ import org.junit.jupiter.api.Test
 import java.util.Objects
 import java.util.UUID
 
-class SegmentTrackingClientTest {
+internal class SegmentTrackingClientTest {
   private val airbyteVersion = AirbyteVersion("dev")
   private val deploymentId = UUID.randomUUID()
   private val deploymentMetadata: DeploymentMetadataRead =
@@ -47,6 +48,7 @@ class SegmentTrackingClientTest {
   private val trackingIdentityFetcher: TrackingIdentityFetcher = mockk()
   private var analytics: Analytics = mockk()
   private var segmentAnalyticsClient: SegmentAnalyticsClient = mockk()
+  private lateinit var airbyteConfig: AirbyteConfig
   private lateinit var segmentTrackingClient: SegmentTrackingClient
 
   @BeforeEach
@@ -55,12 +57,14 @@ class SegmentTrackingClientTest {
     every { trackingIdentityFetcher.apply(any(), any()) } returns identity
     every { segmentAnalyticsClient.analyticsClient } returns analytics
 
+    airbyteConfig = AirbyteConfig()
+
     segmentTrackingClient =
       SegmentTrackingClient(
         trackingIdentityFetcher = trackingIdentityFetcher,
         deploymentFetcher = deploymentFetcher,
         segmentAnalyticsClient = segmentAnalyticsClient,
-        airbyteRole = AIRBYTE_ROLE,
+        airbyteConfig = airbyteConfig,
       )
   }
 
@@ -82,7 +86,6 @@ class SegmentTrackingClientTest {
         EMAIL_KEY to identity.email!!,
         "subscribed_newsletter" to identity.news!!,
         "subscribed_security" to identity.securityUpdates!!,
-        "airbyte_role" to AIRBYTE_ROLE,
       )
     Assertions.assertEquals(identity.customerId.toString(), actual.userId())
     Assertions.assertEquals(expectedTraits, actual.traits())
@@ -95,7 +98,7 @@ class SegmentTrackingClientTest {
         trackingIdentityFetcher = trackingIdentityFetcher,
         deploymentFetcher = deploymentFetcher,
         segmentAnalyticsClient = segmentAnalyticsClient,
-        airbyteRole = "role",
+        airbyteConfig = airbyteConfig,
       )
     val builderSlot = slot<IdentifyMessage.Builder>()
     every { analytics.enqueue(capture(builderSlot)) } returns Unit
@@ -106,7 +109,6 @@ class SegmentTrackingClientTest {
     val actual = builderSlot.captured.build()
     val expectedTraits: Map<String, Any?> =
       mapOf(
-        "airbyte_role" to "role",
         SegmentTrackingClient.AIRBYTE_VERSION_KEY to airbyteVersion.serialize(),
         "anonymized" to identity.anonymousDataCollection!!,
         "deployment_mode" to deploymentMetadata.mode,
@@ -122,14 +124,17 @@ class SegmentTrackingClientTest {
   @Test
   fun testIdentifyWithInstallationId() {
     val installationId = UUID.randomUUID()
+    val airbyteConfig =
+      AirbyteConfig(
+        installationId = installationId,
+      )
 
     segmentTrackingClient =
       SegmentTrackingClient(
         trackingIdentityFetcher = trackingIdentityFetcher,
         deploymentFetcher = deploymentFetcher,
         segmentAnalyticsClient = segmentAnalyticsClient,
-        airbyteRole = "role",
-        installationId = installationId,
+        airbyteConfig = airbyteConfig,
       )
     val builderSlot = slot<IdentifyMessage.Builder>()
     every { analytics.enqueue(capture(builderSlot)) } returns Unit
@@ -140,7 +145,6 @@ class SegmentTrackingClientTest {
     val actual = builderSlot.captured.build()
     val expectedTraits: Map<String, Any?> =
       mapOf(
-        "airbyte_role" to "role",
         SegmentTrackingClient.AIRBYTE_VERSION_KEY to airbyteVersion.serialize(),
         "anonymized" to identity.anonymousDataCollection!!,
         "deployment_mode" to deploymentMetadata.mode,
@@ -203,14 +207,17 @@ class SegmentTrackingClientTest {
   @Test
   fun testTrackWithInstallationId() {
     val installationId = UUID.randomUUID()
+    val airbyteConfig =
+      AirbyteConfig(
+        installationId = installationId,
+      )
 
     segmentTrackingClient =
       SegmentTrackingClient(
         trackingIdentityFetcher = trackingIdentityFetcher,
         deploymentFetcher = deploymentFetcher,
         segmentAnalyticsClient = segmentAnalyticsClient,
-        airbyteRole = "role",
-        installationId = installationId,
+        airbyteConfig = airbyteConfig,
       )
 
     val builderSlot = slot<TrackMessage.Builder>()
@@ -274,7 +281,6 @@ class SegmentTrackingClientTest {
   }
 
   companion object {
-    const val AIRBYTE_ROLE = "dev"
     const val EMAIL = "a@airbyte.io"
     const val EMAIL_KEY = "email"
     const val JUMP = "jump"

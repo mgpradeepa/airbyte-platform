@@ -4,23 +4,25 @@ plugins {
 }
 
 dependencies {
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
 
   ksp(platform(libs.micronaut.platform))
   ksp(libs.bundles.micronaut.annotation.processor)
 
   implementation(platform(libs.fasterxml))
   implementation(libs.bundles.jackson)
-  implementation(libs.spotbugs.annotations)
-  implementation(libs.guava)
 
+  implementation(project(":oss:airbyte-api:server-api"))
   implementation(project(":oss:airbyte-commons"))
+  implementation(project(":oss:airbyte-commons-micronaut"))
   implementation(project(":oss:airbyte-commons-protocol"))
   implementation(project(":oss:airbyte-oauth"))
   implementation(project(":oss:airbyte-config:config-models"))
+  implementation(project(":oss:airbyte-config:config-secrets"))
   implementation(project(":oss:airbyte-db:jooq"))
   implementation(project(":oss:airbyte-db:db-lib"))
   implementation(project(":oss:airbyte-data"))
+  implementation(project(":oss:airbyte-domain:services"))
+  implementation(project(":oss:airbyte-domain:models"))
   implementation(libs.airbyte.protocol)
   implementation(project(":oss:airbyte-config:config-persistence"))
   implementation(project(":oss:airbyte-featureflag"))
@@ -43,6 +45,7 @@ dependencies {
   implementation(libs.bundles.micronaut.data.jdbc)
   implementation(libs.bundles.micronaut.kotlin)
 
+
   testImplementation(project(":oss:airbyte-config:config-persistence"))
   testImplementation(project(":oss:airbyte-test-utils"))
   testImplementation(libs.platform.testcontainers.postgresql)
@@ -51,4 +54,6 @@ dependencies {
   testImplementation(libs.assertj.core)
 
   testImplementation(libs.junit.pioneer)
+  testImplementation(libs.mockito.kotlin)
+  testImplementation(libs.mockk)
 }

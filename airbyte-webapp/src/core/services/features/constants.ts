@@ -2,6 +2,7 @@ import { FeatureItem } from "./types";
 
 export const defaultOssFeatures = [
   FeatureItem.AllowAutoDetectSchema,
+  FeatureItem.AllowSyncFrequencyUnderOneHour,
   FeatureItem.AllowUpdateConnectors,
   FeatureItem.AllowUploadCustomImage,
   FeatureItem.EnterpriseUpsell,
@@ -10,31 +11,35 @@ export const defaultOssFeatures = [
 export const defaultEnterpriseFeatures = [
   ...defaultOssFeatures,
   FeatureItem.AllowAllRBACRoles,
+  FeatureItem.AllowChangeDataplanes,
   FeatureItem.ConnectionHistoryGraphs,
   FeatureItem.ConnectorResourceAllocation,
   FeatureItem.DiagnosticsExport,
   FeatureItem.DisplayOrganizationUsers,
   FeatureItem.EnterpriseBranding,
   FeatureItem.EnterpriseLicenseChecking,
-  FeatureItem.FieldHashing,
   FeatureItem.IndicateGuestUsers,
-  FeatureItem.MappingsUI, // Indicates configuration UI is present.  connection.mappingsUI experiment also required to be true.
-  FeatureItem.MultiWorkspaceUI,
+  FeatureItem.MappingsUI,
+  FeatureItem.CreateMultipleWorkspaces,
+  FeatureItem.OrganizationUI,
+  FeatureItem.OrganizationConnectorSettings,
   FeatureItem.RBAC,
+  FeatureItem.ShowWorkspacePicker,
 ];
 
 export const defaultCloudFeatures = [
   FeatureItem.AllowAutoDetectSchema,
-  FeatureItem.AllowChangeDataGeographies,
+  FeatureItem.AllowChangeDataplanes,
   FeatureItem.AllowDBTCloudIntegration,
   FeatureItem.CloudForTeamsUpsell,
   FeatureItem.ConnectionHistoryGraphs,
   FeatureItem.ConnectorBreakingChangeDeadlines,
   FeatureItem.EmailNotifications,
   FeatureItem.ExternalInvitations,
-  FeatureItem.MultiWorkspaceUI,
+  FeatureItem.OrganizationUI,
   FeatureItem.RBAC,
   FeatureItem.RestrictAdminInForeignWorkspace,
   FeatureItem.ShowInviteUsersHint,
-  FeatureItem.FieldHashing, // also governed by connection.hashingUI experiment
+  FeatureItem.DisplayOrganizationUsers,
+  FeatureItem.ShowWorkspacePicker,
 ];

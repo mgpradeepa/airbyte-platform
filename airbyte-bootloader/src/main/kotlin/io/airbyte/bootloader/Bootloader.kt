@@ -4,22 +4,25 @@
 
 package io.airbyte.bootloader
 
+import io.airbyte.bootloader.runtime.AirbyteBootloaderConfig
+import io.airbyte.commons.DEFAULT_ORGANIZATION_ID
 import io.airbyte.commons.annotation.InternalForTesting
-import io.airbyte.commons.resources.MoreResources
+import io.airbyte.commons.resources.Resources
 import io.airbyte.commons.version.AirbyteProtocolVersionRange
 import io.airbyte.commons.version.AirbyteVersion
-import io.airbyte.config.Geography
-import io.airbyte.config.SsoConfig
+import io.airbyte.config.Configs.AirbyteEdition
 import io.airbyte.config.StandardWorkspace
 import io.airbyte.config.init.PostLoadExecutor
-import io.airbyte.config.persistence.OrganizationPersistence
 import io.airbyte.config.persistence.WorkspacePersistence
+import io.airbyte.data.services.DataplaneGroupService
+import io.airbyte.data.services.OrganizationService
+import io.airbyte.data.services.SsoConfigService
 import io.airbyte.data.services.WorkspaceService
 import io.airbyte.db.init.DatabaseInitializer
 import io.airbyte.db.instance.DatabaseMigrator
+import io.airbyte.micronaut.runtime.AirbyteAuthConfig
 import io.airbyte.persistence.job.JobPersistence
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.micronaut.context.annotation.Value
 import jakarta.inject.Named
 import jakarta.inject.Singleton
 import java.util.UUID
@@ -31,7 +34,8 @@ private val log = KotlinLogging.logger {}
  */
 @Singleton
 class Bootloader(
-  @param:Value("\${airbyte.bootloader.auto-upgrade-connectors}") private val autoUpgradeConnectors: Boolean,
+  private val airbyteBootloaderConfig: AirbyteBootloaderConfig,
+  private val airbyteAuthConfig: AirbyteAuthConfig,
   private val workspaceService: WorkspaceService,
   @param:Named("configsDatabaseInitializer") private val configsDatabaseInitializer: DatabaseInitializer,
   @param:Named("configsDatabaseMigrator") private val configsDatabaseMigrator: DatabaseMigrator,
@@ -39,11 +43,15 @@ class Bootloader(
   @param:Named("jobsDatabaseInitializer") private val jobsDatabaseInitializer: DatabaseInitializer,
   @param:Named("jobsDatabaseMigrator") private val jobsDatabaseMigrator: DatabaseMigrator,
   private val jobPersistence: JobPersistence,
-  private val organizationPersistence: OrganizationPersistence,
+  private val organizationService: OrganizationService,
+  private val ssoConfigService: SsoConfigService,
   private val protocolVersionChecker: ProtocolVersionChecker,
-  @param:Value("\${airbyte.bootloader.run-migration-on-startup}") private val runMigrationOnStartup: Boolean,
-  @param:Value("\${airbyte.auth.default-realm}") private val defaultRealm: String,
   private val postLoadExecution: PostLoadExecutor?,
+  private val dataplaneGroupService: DataplaneGroupService,
+  private val dataplaneInitializer: DataplaneInitializer,
+  val airbyteEdition: AirbyteEdition,
+  private val authSecretInitializer: AuthKubernetesSecretInitializer?,
+  private val secretStorageInitializer: SecretStorageInitializer,
 ) {
   /**
    * Performs all required bootstrapping for the Airbyte environment. This includes the following:
@@ -56,10 +64,15 @@ class Bootloader(
    *  * Create default deployment
    *  * Perform post migration tasks
    *
-   *
    * @throws Exception if unable to perform any of the bootstrap operations.
    */
   fun load() {
+    if (authSecretInitializer != null) {
+      log.info { "Initializing auth secrets..." }
+      authSecretInitializer.checkAccessToSecrets(currentAirbyteVersion)
+      authSecretInitializer.initializeSecrets()
+    }
+
     log.info { "Initializing databases..." }
     initializeDatabases()
 
@@ -67,10 +80,13 @@ class Bootloader(
     assertNonBreakingMigration(jobPersistence, currentAirbyteVersion)
 
     log.info { "Checking protocol version constraints..." }
-    assertNonBreakingProtocolVersionConstraints(protocolVersionChecker, jobPersistence, autoUpgradeConnectors)
+    assertNonBreakingProtocolVersionConstraints(protocolVersionChecker, jobPersistence, airbyteBootloaderConfig.autoUpgradeConnectors)
 
     log.info { "Running database migrations..." }
-    runFlywayMigration(runMigrationOnStartup, configsDatabaseMigrator, jobsDatabaseMigrator)
+    runFlywayMigration(airbyteBootloaderConfig.runMigrationAtStartup, configsDatabaseMigrator, jobsDatabaseMigrator)
+
+    log.info { "Registering dataplane (if none exists)..." }
+    dataplaneInitializer.createDataplaneIfNotExists()
 
     log.info { "Creating workspace (if none exists)..." }
     createWorkspaceIfNoneExists(workspaceService)
@@ -79,7 +95,12 @@ class Bootloader(
     createDeploymentIfNoneExists(jobPersistence)
 
     log.info { "assign default organization to sso realm config..." }
-    createSsoConfigForDefaultOrgIfNoneExists(organizationPersistence)
+    if (airbyteEdition != AirbyteEdition.CLOUD) {
+      createSsoConfigForDefaultOrgIfNoneExists()
+    }
+
+    log.info { "Initializing default secret storage..." }
+    secretStorageInitializer.createOrUpdateDefaultSecretStorage()
 
     val airbyteVersion = currentAirbyteVersion.serialize()
     log.info { "Setting Airbyte version to '$airbyteVersion'" }
@@ -100,10 +121,10 @@ class Bootloader(
     // version in the database when the server main method is called. may be empty if this is the first
     // time the server is started.
     log.info { "Checking for illegal upgrade..." }
-    val initialAirbyteDatabaseVersion = jobPersistence.version.map { version: String? -> AirbyteVersion(version) }
+    val initialAirbyteDatabaseVersion = jobPersistence.getVersion().map { version: String -> AirbyteVersion(version) }
     val requiredVersionUpgrade = getRequiredVersionUpgrade(initialAirbyteDatabaseVersion.orElse(null), airbyteVersion)
     if (requiredVersionUpgrade != null) {
-      val attentionBanner = MoreResources.readResource("banner/attention-banner.txt")
+      val attentionBanner = Resources.read("banner/attention-banner.txt")
       log.error { attentionBanner }
       val message =
         "Cannot upgrade from version ${initialAirbyteDatabaseVersion.get().serialize()} to version ${airbyteVersion.serialize()} " +
@@ -120,18 +141,17 @@ class Bootloader(
     jobPersistence: JobPersistence,
     autoUpgradeConnectors: Boolean,
   ) {
-    val newProtocolRange = protocolVersionChecker.validate(autoUpgradeConnectors)
-    if (newProtocolRange == null) {
-      throw RuntimeException(
-        "Aborting bootloader to avoid breaking existing connection after an upgrade. " +
-          "Please address airbyte protocol version support issues in the connectors before retrying.",
-      )
-    }
+    val newProtocolRange =
+      protocolVersionChecker.validate(autoUpgradeConnectors)
+        ?: throw RuntimeException(
+          "Aborting bootloader to avoid breaking existing connection after an upgrade. " +
+            "Please address airbyte protocol version support issues in the connectors before retrying.",
+        )
     trackProtocolVersion(jobPersistence, newProtocolRange)
   }
 
   private fun createDeploymentIfNoneExists(jobPersistence: JobPersistence) {
-    val deploymentOptional = jobPersistence.deployment
+    val deploymentOptional = jobPersistence.getDeployment()
     if (deploymentOptional.isPresent) {
       log.info { "Running deployment: ${deploymentOptional.get()}" }
     } else {
@@ -141,21 +161,43 @@ class Bootloader(
     }
   }
 
-  private fun createSsoConfigForDefaultOrgIfNoneExists(organizationPersistence: OrganizationPersistence) {
-    if (organizationPersistence.getSsoConfigForOrganization(OrganizationPersistence.DEFAULT_ORGANIZATION_ID).isPresent) {
-      log.info { "SsoConfig already exists for the default organization." }
+  private fun createSsoConfigForDefaultOrgIfNoneExists() {
+    val existingConfig = ssoConfigService.getSsoConfig(DEFAULT_ORGANIZATION_ID)
+    if (existingConfig != null) {
+      if (existingConfig.keycloakRealm != airbyteAuthConfig.defaultRealm) {
+        // Check if target realm is available before deleting existing config
+        if (ssoConfigService.getSsoConfigByRealmName(airbyteAuthConfig.defaultRealm) != null) {
+          log.info {
+            "An SsoConfig with realm ${airbyteAuthConfig.defaultRealm} already exists, so the default organization's config cannot be updated."
+          }
+          return
+        }
+        log.info { "SsoConfig already exists for the default organization with a different realm. Deleting and recreating." }
+        ssoConfigService.deleteSsoConfig(DEFAULT_ORGANIZATION_ID)
+      } else {
+        // Config exists with correct realm, nothing to do
+        return
+      }
+    }
+
+    if (ssoConfigService.getSsoConfigByRealmName(airbyteAuthConfig.defaultRealm) != null) {
+      log.info {
+        "An SsoConfig with realm ${airbyteAuthConfig.defaultRealm} already exists, so one cannot be created for the default organization."
+      }
       return
     }
-    if (organizationPersistence.getSsoConfigByRealmName(defaultRealm).isPresent) {
-      log.info { "An SsoConfig with realm $defaultRealm already exists, so one cannot be created for the default organization." }
-      return
-    }
-    organizationPersistence.createSsoConfig(
-      SsoConfig()
-        .withSsoConfigId(UUID.randomUUID())
-        .withOrganizationId(OrganizationPersistence.DEFAULT_ORGANIZATION_ID)
-        .withKeycloakRealm(defaultRealm),
-    )
+
+    val ssoConfig =
+      io.airbyte.domain.models.SsoConfig(
+        organizationId = DEFAULT_ORGANIZATION_ID,
+        companyIdentifier = airbyteAuthConfig.defaultRealm,
+        clientId = "",
+        clientSecret = "",
+        discoveryUrl = "",
+        emailDomain = null,
+        status = io.airbyte.domain.models.SsoConfigStatus.ACTIVE,
+      )
+    ssoConfigService.createSsoConfig(ssoConfig)
   }
 
   private fun createWorkspaceIfNoneExists(workspaceService: WorkspaceService) {
@@ -179,8 +221,9 @@ class Bootloader(
         .withInitialSetupComplete(false)
         .withDisplaySetupWizard(true)
         .withTombstone(false)
-        .withDefaultGeography(Geography.AUTO) // attach this new workspace to the Default Organization which should always exist at this point.
-        .withOrganizationId(OrganizationPersistence.DEFAULT_ORGANIZATION_ID)
+        .withDataplaneGroupId(dataplaneGroupService.getDefaultDataplaneGroup().id)
+        // attach this new workspace to the Default Organization which should always exist at this point.
+        .withOrganizationId(DEFAULT_ORGANIZATION_ID)
     // NOTE: it's safe to use the NoSecrets version since we know that the user hasn't supplied any
     // secrets yet.
     workspaceService.writeStandardWorkspaceNoSecrets(workspace)
@@ -204,11 +247,11 @@ class Bootloader(
       return null
     }
 
-    log.info { "${"Current Airbyte version: {}"} $airbyteDatabaseVersion" }
-    log.info { "${"Future Airbyte version: {}"} $airbyteVersion" }
+    log.info { "Current Airbyte version: $airbyteDatabaseVersion" }
+    log.info { "Future Airbyte version: $airbyteVersion" }
 
     for (version in REQUIRED_VERSION_UPGRADES) {
-      val futureVersionIsAfterVersionBreak = airbyteVersion.greaterThan(version) || airbyteVersion.isDev
+      val futureVersionIsAfterVersionBreak = airbyteVersion.greaterThan(version) || airbyteVersion.isDev()
       val isUpgradingThroughVersionBreak = airbyteDatabaseVersion.lessThan(version) && futureVersionIsAfterVersionBreak
       if (isUpgradingThroughVersionBreak) {
         return version

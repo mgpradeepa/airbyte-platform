@@ -34,13 +34,10 @@ configurations.all {
 }
 
 dependencies {
-  annotationProcessor(platform(libs.micronaut.platform))
-  annotationProcessor(libs.bundles.micronaut.annotation.processor)
-
   ksp(platform(libs.micronaut.platform))
   ksp(libs.bundles.micronaut.annotation.processor)
+  ksp(project(":oss:airbyte-configuration-processor"))
 
-  implementation(libs.spotbugs.annotations)
   implementation(platform(libs.micronaut.platform))
   implementation(libs.google.cloud.storage)
   implementation(libs.bundles.micronaut)
@@ -54,8 +51,9 @@ dependencies {
   implementation(libs.aws.java.sdk.sts)
   implementation(libs.google.auth.library.oauth2.http)
   implementation(libs.java.jwt)
+  implementation(libs.kotlin.logging)
   implementation(libs.kubernetes.client)
-  implementation(libs.guava)
+  implementation(libs.retrofit)
   implementation(libs.temporal.sdk) {
     exclude(module = "guava")
   }
@@ -98,14 +96,16 @@ dependencies {
   runtimeOnly(libs.javax.databind)
   runtimeOnly(libs.bundles.logback)
 
-  testAnnotationProcessor(platform(libs.micronaut.platform))
-  testAnnotationProcessor(libs.bundles.micronaut.annotation.processor)
-  testAnnotationProcessor(libs.bundles.micronaut.test.annotation.processor)
+  kspTest(platform(libs.micronaut.platform))
+  kspTest(libs.bundles.micronaut.annotation.processor)
+  kspTest(libs.bundles.micronaut.test.annotation.processor)
 
   testImplementation(libs.bundles.micronaut.test)
   testImplementation(libs.temporal.testing)
   testImplementation(libs.json.path)
+  testImplementation(libs.json.smart)
   testImplementation(libs.mockito.inline)
+  testImplementation(libs.mockito.kotlin)
   testImplementation(libs.mockk)
   testImplementation(libs.postgresql)
   testImplementation(libs.platform.testcontainers)
@@ -115,11 +115,14 @@ dependencies {
   testImplementation(libs.bundles.junit)
   testImplementation(libs.assertj.core)
   testImplementation(libs.junit.pioneer)
+  testImplementation(libs.retrofit.mock)
+  testImplementation(variantOf(libs.opentracing.util) { classifier("tests") })
 
   testRuntimeOnly(libs.junit.jupiter.engine)
 
-  integrationTestAnnotationProcessor(platform(libs.micronaut.platform))
-  integrationTestAnnotationProcessor(libs.bundles.micronaut.test.annotation.processor)
+  kspIntegrationTest(platform(libs.micronaut.platform))
+  kspIntegrationTest(libs.bundles.micronaut.test.annotation.processor)
+
   integrationTestImplementation(libs.bundles.junit)
   integrationTestImplementation(libs.junit.pioneer)
   integrationTestImplementation(libs.bundles.micronaut.test)
@@ -131,11 +134,10 @@ dependencies {
 
 airbyte {
   application {
-    mainClass = "io.airbyte.workers.Application"
+    mainClass = "io.airbyte.workers.ApplicationKt"
     defaultJvmArgs = listOf("-XX:+ExitOnOutOfMemoryError", "-XX:MaxRAMPercentage=75.0")
     localEnvVars.putAll(
       mapOf(
-        "AIRBYTE_ROLE" to "undefined",
         "AIRBYTE_VERSION" to "dev",
         "MICRONAUT_ENVIRONMENTS" to "control-plane",
       ),

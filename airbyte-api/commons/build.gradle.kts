@@ -3,7 +3,6 @@ plugins {
 }
 
 dependencies {
-  annotationProcessor(libs.micronaut.openapi)
 
   ksp(libs.micronaut.openapi)
   ksp(platform(libs.micronaut.platform))
@@ -15,8 +14,8 @@ dependencies {
   api(libs.bundles.micronaut.annotation)
   api(libs.micronaut.http)
   api(libs.failsafe.okhttp)
+  api(libs.failsafe.retrofit)
   api(libs.okhttp)
-  api(libs.guava)
   api(libs.java.jwt)
   api(libs.google.auth.library.oauth2.http)
   api(libs.kotlin.logging)
@@ -37,6 +36,7 @@ dependencies {
   implementation(libs.reactor.core)
   implementation(libs.slf4j.api)
   implementation(libs.swagger.annotations)
+  implementation(libs.retrofit)
 
   implementation(project(":oss:airbyte-commons"))
 
@@ -53,11 +53,4 @@ dependencies {
 
 tasks.withType<JavaCompile>().configureEach {
   options.compilerArgs = listOf("-parameters")
-}
-
-// Even though Kotlin is excluded on Spotbugs, this project
-// still runs into spotbug issues. Working theory is that
-// generated code is being picked up. Disable as a short-term fix.
-tasks.named("spotbugsMain") {
-  enabled = false
 }

@@ -8,8 +8,9 @@ import com.fasterxml.jackson.core.JsonParseException
 import com.google.api.gax.paging.Page
 import com.google.cloud.storage.Blob
 import com.google.cloud.storage.Storage
+import io.airbyte.config.CustomerTier
 import io.airbyte.data.config.OrganizationCustomerAttributesServiceConfig
-import io.airbyte.data.services.CustomerTier
+import io.airbyte.micronaut.runtime.AirbyteConnectorRolloutConfig
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.mockk.every
 import io.mockk.mockk
@@ -36,9 +37,14 @@ class OrganizationCustomerAttributesServiceDataImplTest {
     blobMock = mockk()
     organizationCustomerAttributeService =
       OrganizationCustomerAttributesServiceDataImpl(
-        gcsBucketName = "test-bucket",
-        gcsApplicationCredentials = "creds",
-        gcsProjectId = "projectId",
+        AirbyteConnectorRolloutConfig(
+          gcs =
+            AirbyteConnectorRolloutConfig.AirbyteConnectorRolloutGcsConfig(
+              applicationCredentials = "creds",
+              bucketName = "test-bucket",
+              projectId = "projectId",
+            ),
+        ),
         organizationCustomerAttributeServiceConfig = organizationCustomerAttributeServiceConfig,
       )
   }

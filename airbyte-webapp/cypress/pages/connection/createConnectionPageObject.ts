@@ -1,3 +1,4 @@
+import { getWorkspaceId } from "@cy/commands/api/workspace";
 import { getTestId } from "@cy/utils/selectors";
 
 export type ConnectorType = "source" | "destination";
@@ -5,9 +6,9 @@ const getExistingConnectorItemButton = (connectorType: ConnectorType, connectorN
   `button[data-testid='select-existing-${connectorType}-${connectorName}']`;
 
 const getExistingConnectorTypeOption = (connectorType: ConnectorType) =>
-  `input[data-testid='radio-button-tile-${connectorType}Type-existing']`;
+  `[data-testid='radio-button-tile-${connectorType}Type-existing']`;
 const getNewConnectorTypeOption = (connectorType: ConnectorType) =>
-  `input[data-testid='radio-button-tile-${connectorType}Type-new']`;
+  `[data-testid='radio-button-tile-${connectorType}Type-new']`;
 
 export const nextButton = getTestId("next-creation-page");
 export const selectExistingConnectorFromList = (connectorType: ConnectorType, connectorName: string) => {
@@ -15,8 +16,8 @@ export const selectExistingConnectorFromList = (connectorType: ConnectorType, co
 };
 
 export const isExistingConnectorTypeSelected = (connectorType: ConnectorType) => {
-  cy.get(getExistingConnectorTypeOption(connectorType)).should("be.checked");
-  cy.get(getNewConnectorTypeOption(connectorType)).should("not.be.checked");
+  cy.get(getExistingConnectorTypeOption(connectorType)).should("have.attr", "aria-checked", "true");
+  cy.get(getNewConnectorTypeOption(connectorType)).should("have.attr", "aria-checked", "false");
 };
 
 export const isNextPageButtonEnabled = (expectedResult: boolean) => {
@@ -24,7 +25,7 @@ export const isNextPageButtonEnabled = (expectedResult: boolean) => {
 };
 
 export const isAtConnectionConfigurationStep = () =>
-  cy.url().should("include", `/connections/new-connection/configure`);
+  cy.url().should("include", `/workspaces/${getWorkspaceId()}/connections/new-connection/configure`);
 
 export const isAtConnectionOverviewPage = (connectionId: string) =>
-  cy.url().should("include", `connections/${connectionId}/status`);
+  cy.url().should("include", `/workspaces/${getWorkspaceId()}/connections/${connectionId}/status`);

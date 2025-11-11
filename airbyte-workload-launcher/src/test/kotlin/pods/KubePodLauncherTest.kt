@@ -5,9 +5,11 @@
 package io.airbyte.workload.launcher.pods
 
 import dev.failsafe.RetryPolicy
+import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.metrics.MetricAttribute
 import io.airbyte.metrics.MetricClient
 import io.airbyte.metrics.OssMetricsRegistry
+import io.airbyte.micronaut.runtime.AirbyteWorkerConfig
 import io.airbyte.workload.launcher.config.ApplicationBeanFactory
 import io.fabric8.kubernetes.api.model.HasMetadata
 import io.fabric8.kubernetes.api.model.ObjectMeta
@@ -49,26 +51,39 @@ class KubePodLauncherTest {
   @MockK
   private lateinit var metricClient: MetricClient
 
+  @MockK
+  private lateinit var featureFlagClient: FeatureFlagClient
+
   private lateinit var kubePodLauncher: KubePodLauncher
 
   private lateinit var kubernetesClientRetryPolicy: RetryPolicy<Any>
 
+  private lateinit var airbyteWorkerConfig: AirbyteWorkerConfig
+
   @BeforeEach
   fun setup() {
+    airbyteWorkerConfig =
+      AirbyteWorkerConfig(
+        job =
+          AirbyteWorkerConfig.AirbyteWorkerJobConfig(
+            kubernetes =
+              AirbyteWorkerConfig.AirbyteWorkerJobConfig.AirbyteWorkerJobKubernetesConfig(namespace = "namespace"),
+          ),
+      )
     kubernetesClientRetryPolicy = RetryPolicy.ofDefaults()
     kubePodLauncher =
       KubePodLauncher(
         kubernetesClient,
         metricClient,
-        "namespace",
+        airbyteWorkerConfig,
+        featureFlagClient,
         kubernetesClientRetryPolicy,
-        mockk(),
-        null,
       )
 
     every { kubernetesClient.pods() } throws IllegalStateException()
     every { kubernetesClient.resource(any<Pod>()) } throws IllegalStateException()
     every { metricClient.count(metric = any(), value = any(), attributes = anyVararg()) } returns mockk<Counter>()
+    every { featureFlagClient.boolVariation(any(), any()) } returns true
   }
 
   @Test
@@ -153,10 +168,9 @@ class KubePodLauncherTest {
       KubePodLauncher(
         kubernetesClient,
         metricClient,
-        "namespace",
+        airbyteWorkerConfig,
+        featureFlagClient,
         kubernetesClientRetryPolicy,
-        mockk(),
-        null,
       )
 
     assertThrows<KubernetesClientException> {
@@ -193,10 +207,9 @@ class KubePodLauncherTest {
       KubePodLauncher(
         kubernetesClient,
         metricClient,
-        "namespace",
+        airbyteWorkerConfig,
+        featureFlagClient,
         kubernetesClientRetryPolicy,
-        mockk(),
-        null,
       )
 
     assertThrows<KubernetesClientException> {
@@ -236,10 +249,9 @@ class KubePodLauncherTest {
       KubePodLauncher(
         kubernetesClient,
         metricClient,
-        "namespace",
+        airbyteWorkerConfig,
+        featureFlagClient,
         kubernetesClientRetryPolicy,
-        mockk(),
-        null,
       )
 
     assertThrows<KubernetesClientException> {
@@ -277,10 +289,9 @@ class KubePodLauncherTest {
       KubePodLauncher(
         kubernetesClient,
         metricClient,
-        "namespace",
+        airbyteWorkerConfig,
+        featureFlagClient,
         kubernetesClientRetryPolicy,
-        mockk(),
-        null,
       )
 
     assertThrows<KubernetesClientException> {
@@ -320,10 +331,9 @@ class KubePodLauncherTest {
       KubePodLauncher(
         kubernetesClient,
         metricClient,
-        "namespace",
+        airbyteWorkerConfig,
+        featureFlagClient,
         kubernetesClientRetryPolicy,
-        mockk(),
-        null,
       )
 
     assertThrows<RuntimeException> {

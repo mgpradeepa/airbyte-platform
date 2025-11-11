@@ -32,17 +32,28 @@ micronaut:
 
 airbyte:
   connector-registry:
-    seed-provider: ${CONNECTOR_REGISTRY_SEED_PROVIDER:local}
+    seed-provider: ${CONNECTOR_REGISTRY_SEED_PROVIDER:remote}
     remote:
       base-url: ${CONNECTOR_REGISTRY_BASE_URL:}
       timeout-ms: ${CONNECTOR_REGISTRY_TIMEOUT_MS:30000}
   license-key: ${AIRBYTE_LICENSE_KEY:}
   cron:
     update-definitions:
-      enabled: ${UPDATE_DEFINITIONS_CRON_ENABLED:false}
+      enabled: ${UPDATE_DEFINITIONS_CRON_ENABLED:true}
+    declarative-sources-updater:
+      enabled: ${RUN_DECLARATIVE_SOURCES_UPDATER:true}
+    db-prune:
+      enabled: ${DB_PRUNE_CRON_ENABLED:true}
   edition: ${AIRBYTE_EDITION:COMMUNITY}
+
+  stigg:
+    enabled: ${STIGG_ENABLED:false}
+    api-key: ${STIGG_API_KEY:}
+    sidecar-host: ${STIGG_SIDECAR_HOST:}
+    sidecar-port: ${STIGG_SIDECAR_PORT:8800}
+
   feature-flag:
-    client: ${FEATURE_FLAG_CLIENT:}
+    client: ${FEATURE_FLAG_CLIENT:CONFIGFILE}
     path: ${FEATURE_FLAG_PATH:/flags}
     api-key: ${LAUNCHDARKLY_KEY:}
   flyway:
@@ -52,10 +63,6 @@ airbyte:
   protocol:
     min-version: ${AIRBYTE_PROTOCOL_VERSION_MIN:0.0.0}
     max-version: ${AIRBYTE_PROTOCOL_VERSION_MAX:0.3.0}
-  role: ${AIRBYTE_ROLE:}
-  temporal:
-    worker:
-      ports: ${TEMPORAL_WORKER_PORTS:}
   tracking:
     strategy: ${TRACKING_STRATEGY:LOGGING}
     write-key: ${SEGMENT_WRITE_KEY:}
@@ -69,20 +76,66 @@ airbyte:
       heartbeat-check-rate: PT1M
       not-started-check-rate: PT1M
       non-sync-age-check-rate: PT1M
+      queue-depth-check-rate: PT1M
       sync-age-check-rate: PT1M
       non-sync-workload-timeout: ${NON_SYNC_WORKLOAD_TIMEOUT:PT4H} # Should be longer than the sum of the deadlines
       sync-workload-timeout: ${SYNC_WORKLOAD_TIMEOUT:P30D} # Should be longer than the sum of the deadlines
+    queue:
+      deletion-batch-size: ${WORKLOAD_QUEUE_DELETION_BATCH_SIZE:40000}
+      deletion-cron: 0 15 * * * ?
+  internal-api:
+    base-path: ${INTERNAL_API_HOST}/api
+    auth:
+      signature-secret: ${AB_JWT_SIGNATURE_SECRET:}
   workload-api:
     base-path: ${WORKLOAD_API_HOST:}
-    bearer-token: ${WORKLOAD_API_BEARER_TOKEN:}
     connect-timeout-seconds: ${WORKLOAD_API_CONNECT_TIMEOUT_SECONDS:30}
     read-timeout-seconds: ${WORKLOAD_API_READ_TIMEOUT_SECONDS:300}
     retries:
       delay-seconds: ${WORKLOAD_API_RETRY_DELAY_SECONDS:2}
       max: ${WORKLOAD_API_MAX_RETRIES:5}
-  workspace:
-    docker-mount: ${WORKSPACE_DOCKER_MOUNT:}
-    root: ${WORKSPACE_ROOT}
+  workspace-root: ${WORKSPACE_ROOT}
+  secret:
+    persistence: ${SECRET_PERSISTENCE:TESTING_CONFIG_DB_TABLE}
+    store:
+      aws:
+        access-key: ${AWS_SECRET_MANAGER_ACCESS_KEY_ID:}
+        secret-key: ${AWS_SECRET_MANAGER_SECRET_ACCESS_KEY:}
+        region: ${AWS_SECRET_MANAGER_REGION:}
+        kmsKeyArn: ${AWS_KMS_KEY_ARN:}
+        tags: ${AWS_SECRET_MANAGER_SECRET_TAGS:}
+      gcp:
+        credentials: ${SECRET_STORE_GCP_CREDENTIALS:}
+        project-id: ${SECRET_STORE_GCP_PROJECT_ID:}
+        region: ${SECRET_STORE_GCP_REGION:}
+      vault:
+        address: ${VAULT_ADDRESS:}
+        prefix: ${VAULT_PREFIX:}
+        token: ${VAULT_AUTH_TOKEN:}
+      azure:
+        vault-url: ${AB_AZURE_KEY_VAULT_VAULT_URL:}
+        tenant-id: ${AB_AZURE_KEY_VAULT_TENANT_ID:}
+        client-id: ${AB_AZURE_KEY_VAULT_CLIENT_ID:}
+        client-secret: ${AB_AZURE_KEY_VAULT_CLIENT_SECRET:}
+        tags: ${AB_AZURE_KEY_VAULT_TAGS:}
+  temporal:
+    cloud:
+      client:
+        cert: ${TEMPORAL_CLOUD_CLIENT_CERT:}
+        key: ${TEMPORAL_CLOUD_CLIENT_KEY:}
+      enabled: ${TEMPORAL_CLOUD_ENABLED:false}
+      host: ${TEMPORAL_CLOUD_HOST:}
+      namespace: ${TEMPORAL_CLOUD_NAMESPACE:}
+      connector-rollout:
+        host: ${TEMPORAL_CLOUD_HOST_CONNECTOR_ROLLOUT:}
+        namespace: ${TEMPORAL_CLOUD_NAMESPACE_CONNECTOR_ROLLOUT:}
+    host: ${TEMPORAL_HOST:`airbyte-temporal:7233`}
+    retention: ${TEMPORAL_HISTORY_RETENTION_IN_DAYS:30}
+    sdk:
+      timeouts:
+        rpc-timeout: ${TEMPORAL_SDK_RPC_TIMEOUT:60s}
+        rpc-long-poll-timeout: ${TEMPORAL_SDK_RPC_LONG_POLL_TIMEOUT:70s}
+        rpc-query-timeout: ${TEMPORAL_SDK_RPC_QUERY_TIMEOUT:10s}
 
 datasources:
   config:
@@ -95,7 +148,7 @@ datasources:
     url: ${DATABASE_URL}
     driverClassName: org.postgresql.Driver
     username: ${DATABASE_USER}
-    password: ${DATABASE_PASSWORD}
+    password: ${DATABASE_PASSWORD:}
   jobs:
     connection-test-query: SELECT 1
     connection-timeout: 30000
@@ -106,12 +159,26 @@ datasources:
     url: ${DATABASE_URL}
     driverClassName: org.postgresql.Driver
     username: ${DATABASE_USER}
-    password: ${DATABASE_PASSWORD}
+    password: ${DATABASE_PASSWORD:}
+  local-secrets:
+    connection-test-query: SELECT 1
+    connection-timeout: 30000
+    idle-timeout: 600000
+    initialization-fail-timeout: -1 # Disable fail fast checking to avoid issues due to other pods not being started in time
+    maximum-pool-size: 20
+    minimum-idle: 0
+    url: ${DATABASE_URL}
+    driverClassName: org.postgresql.Driver
+    username: ${DATABASE_USER}
+    password: ${DATABASE_PASSWORD:}
+    pool-name: config-pool
 
 docker:
   network: ${DOCKER_NETWORK:host}
 
 endpoints:
+  all:
+    port: 8085
   beans:
     enabled: true
     sensitive: false
@@ -163,17 +230,6 @@ jooq:
     jobs:
       jackson-converter-enabled: true
       sql-dialect: POSTGRES
-
-temporal:
-  cloud:
-    client:
-      cert: ${TEMPORAL_CLOUD_CLIENT_CERT:}
-      key: ${TEMPORAL_CLOUD_CLIENT_KEY:}
-    enabled: ${TEMPORAL_CLOUD_ENABLED:false}
-    host: ${TEMPORAL_CLOUD_HOST:}
-    namespace: ${TEMPORAL_CLOUD_NAMESPACE:}
-  host: ${TEMPORAL_HOST:`airbyte-temporal:7233`}
-  retention: ${TEMPORAL_HISTORY_RETENTION_IN_DAYS:30}
 
 logger:
   levels:

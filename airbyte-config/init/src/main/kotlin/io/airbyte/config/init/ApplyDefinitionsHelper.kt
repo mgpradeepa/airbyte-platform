@@ -4,12 +4,13 @@
 
 package io.airbyte.config.init
 
-import com.google.common.annotations.VisibleForTesting
+import io.airbyte.commons.annotation.InternalForTesting
 import io.airbyte.commons.version.AirbyteProtocolVersion
 import io.airbyte.commons.version.AirbyteProtocolVersionRange
 import io.airbyte.config.ActorDefinitionBreakingChange
 import io.airbyte.config.ActorDefinitionVersion
 import io.airbyte.config.ActorType
+import io.airbyte.config.Configs
 import io.airbyte.config.Configs.SeedDefinitionsProviderType
 import io.airbyte.config.ConnectorEnumRolloutState
 import io.airbyte.config.ConnectorRegistryDestinationDefinition
@@ -22,7 +23,6 @@ import io.airbyte.config.init.ApplyDefinitionMetricsHelper.DefinitionProcessingO
 import io.airbyte.config.init.ApplyDefinitionMetricsHelper.DefinitionProcessingSuccessOutcome
 import io.airbyte.config.init.ApplyDefinitionMetricsHelper.getMetricAttributes
 import io.airbyte.config.persistence.ActorDefinitionVersionResolver
-import io.airbyte.config.persistence.ConfigNotFoundException
 import io.airbyte.config.specs.DefinitionsProvider
 import io.airbyte.data.services.ActorDefinitionService
 import io.airbyte.data.services.ConnectorRolloutService
@@ -31,13 +31,10 @@ import io.airbyte.data.services.SourceService
 import io.airbyte.metrics.MetricClient
 import io.airbyte.metrics.OssMetricsRegistry
 import io.airbyte.persistence.job.JobPersistence
-import io.airbyte.validation.json.JsonValidationException
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Requires
 import jakarta.inject.Named
 import jakarta.inject.Singleton
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import java.io.IOException
 import java.util.Optional
 import java.util.UUID
 import kotlin.jvm.optionals.getOrNull
@@ -61,6 +58,7 @@ class ApplyDefinitionsHelper(
   private val actorDefinitionVersionResolver: ActorDefinitionVersionResolver,
   private val airbyteCompatibleConnectorsValidator: AirbyteCompatibleConnectorsValidator,
   private val connectorRolloutService: ConnectorRolloutService,
+  private val airbyteEdition: Configs.AirbyteEdition,
 ) {
   private var newConnectorCount = 0
   private var changedConnectorCount = 0
@@ -74,20 +72,14 @@ class ApplyDefinitionsHelper(
    * @param reImportVersionInUse - It forces the connector in use to re-import their connector definition.
    */
   @JvmOverloads
-  @Throws(
-    JsonValidationException::class,
-    IOException::class,
-    ConfigNotFoundException::class,
-    io.airbyte.config.persistence.ConfigNotFoundException::class,
-  )
   fun apply(
     updateAll: Boolean = false,
     reImportVersionInUse: Boolean = false,
   ) {
-    val latestSourceDefinitions = definitionsProvider.sourceDefinitions
-    val latestDestinationDefinitions = definitionsProvider.destinationDefinitions
+    val latestSourceDefinitions = definitionsProvider.getSourceDefinitions()
+    val latestDestinationDefinitions = definitionsProvider.getDestinationDefinitions()
 
-    val currentProtocolRange = jobPersistence.currentProtocolVersionRange
+    val currentProtocolRange = jobPersistence.getCurrentProtocolVersionRange()
     val protocolCompatibleSourceDefinitions =
       filterOutIncompatibleSourceDefs(currentProtocolRange, latestSourceDefinitions)
     val protocolCompatibleDestinationDefinitions =
@@ -98,8 +90,8 @@ class ApplyDefinitionsHelper(
     val airbyteCompatibleDestinationDefinitions =
       filterOutIncompatibleDestinationDefsWithCurrentAirbyteVersion(protocolCompatibleDestinationDefinitions)
     val actorDefinitionIdsToDefaultVersionsMap =
-      actorDefinitionService.actorDefinitionIdsToDefaultVersionsMap
-    val actorDefinitionIdsInUse = actorDefinitionService.actorDefinitionIdsInUse
+      actorDefinitionService.getActorDefinitionIdsToDefaultVersionsMap()
+    val actorDefinitionIdsInUse = actorDefinitionService.getActorDefinitionIdsInUse()
 
     newConnectorCount = 0
     changedConnectorCount = 0
@@ -110,11 +102,10 @@ class ApplyDefinitionsHelper(
       applyDestinationDefinition(actorDefinitionIdsToDefaultVersionsMap, def, actorDefinitionIdsInUse, updateAll, reImportVersionInUse)
     }
     supportStateUpdater.updateSupportStates()
-    log.info("New connectors added: {}", newConnectorCount)
-    log.info("Version changes applied: {}", changedConnectorCount)
+    log.info { "New connectors added: $newConnectorCount" }
+    log.info { "Version changes applied: $changedConnectorCount" }
   }
 
-  @Throws(IOException::class, JsonValidationException::class, ConfigNotFoundException::class)
   private fun applySourceDefinition(
     actorDefinitionIdsAndDefaultVersions: Map<UUID, ActorDefinitionVersion>,
     newDef: ConnectorRegistrySourceDefinition,
@@ -136,14 +127,14 @@ class ApplyDefinitionsHelper(
           try {
             ConnectorRegistryConverters.toRcSourceDefinitions(newDef)
           } catch (e: Exception) {
-            log.error("Could not extract release candidates from the connector definition: {}", newDef.name, e)
+            log.error(e) { "Could not extract release candidates from the connector definition: ${newDef.name}" }
             emptyList()
           }
         }
 
       breakingChangesForDef = ConnectorRegistryConverters.toActorDefinitionBreakingChanges(newDef)
     } catch (e: IllegalArgumentException) {
-      log.error("Failed to convert source definition: {}", newDef.name, e)
+      log.error(e) { "Failed to convert source definition: ${newDef.name}" }
       trackDefinitionProcessed(
         newDef.dockerRepository,
         newDef.dockerImageTag,
@@ -154,7 +145,7 @@ class ApplyDefinitionsHelper(
 
     val connectorIsNew = !actorDefinitionIdsAndDefaultVersions.containsKey(newSourceDef.sourceDefinitionId)
     if (connectorIsNew) {
-      log.info("Adding new connector {}:{}", newDef.dockerRepository, newDef.dockerImageTag)
+      log.info { "Adding new connector ${newDef.dockerRepository}:${newDef.dockerImageTag}" }
       sourceService.writeConnectorMetadata(newSourceDef, newADV, breakingChangesForDef)
       newConnectorCount++
       trackDefinitionProcessed(newDef.dockerRepository, newDef.dockerImageTag, DefinitionProcessingSuccessOutcome.INITIAL_VERSION_ADDED)
@@ -171,17 +162,14 @@ class ApplyDefinitionsHelper(
     val shouldUpdateOldVersionMetadata = (newADV.dockerImageTag != currentDefaultADV.dockerImageTag) && reImportVersionInUse
 
     if (shouldUpdateActorDefinitionDefaultVersion) {
-      log.info(
-        "Updating default version for connector {}: {} -> {}",
-        currentDefaultADV.dockerRepository,
-        currentDefaultADV.dockerImageTag,
-        newADV.dockerImageTag,
-      )
+      log.info {
+        "Updating default version for connector ${currentDefaultADV.dockerRepository}: ${currentDefaultADV.dockerImageTag} -> ${newADV.dockerImageTag}"
+      }
       sourceService.writeConnectorMetadata(newSourceDef, newADV, breakingChangesForDef)
       changedConnectorCount++
       trackDefinitionProcessed(newDef.dockerRepository, newDef.dockerImageTag, DefinitionProcessingSuccessOutcome.DEFAULT_VERSION_UPDATED)
     } else if (shouldUpdateOldVersionMetadata) {
-      log.info("Refreshing default version metadata for connector ${currentDefaultADV.dockerRepository}:${currentDefaultADV.dockerImageTag}")
+      log.info { "Refreshing default version metadata for connector ${currentDefaultADV.dockerRepository}:${currentDefaultADV.dockerImageTag}" }
 
       val updatedADV =
         actorDefinitionVersionResolver.fetchRemoteActorDefinitionVersion(
@@ -203,8 +191,11 @@ class ApplyDefinitionsHelper(
     applyReleaseCandidates(rcDefinitions)
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   internal fun <T> applyReleaseCandidates(rcDefinitions: List<T>) {
+    if (airbyteEdition != Configs.AirbyteEdition.CLOUD) {
+      return
+    }
     for (rcDef in rcDefinitions) {
       val rcAdv =
         when (rcDef) {
@@ -217,17 +208,17 @@ class ApplyDefinitionsHelper(
         }
 
       val insertedAdv = actorDefinitionService.writeActorDefinitionVersion(rcAdv)
-      log.info("Inserted or updated release candidate actor definition version for {}:{}", insertedAdv.dockerRepository, insertedAdv.dockerImageTag)
+      log.info { "Inserted or updated release candidate actor definition version for ${insertedAdv.dockerRepository}:${insertedAdv.dockerImageTag}" }
       val initialAdv = actorDefinitionService.getDefaultVersionForActorDefinitionIdOptional(rcAdv.actorDefinitionId)
       if (initialAdv.isEmpty) {
-        log.error("Could not find default version for actor definition ID: {}", rcAdv.actorDefinitionId)
+        log.error { "Could not find default version for actor definition ID: ${rcAdv.actorDefinitionId}" }
         continue
       }
       try {
         val connectorRollout =
           when (rcDef) {
-            is ConnectorRegistrySourceDefinition -> ConnectorRegistryConverters.toConnectorRollout(rcDef, insertedAdv, initialAdv.getOrNull())
-            is ConnectorRegistryDestinationDefinition -> ConnectorRegistryConverters.toConnectorRollout(rcDef, insertedAdv, initialAdv.getOrNull())
+            is ConnectorRegistrySourceDefinition -> ConnectorRegistryConverters.toConnectorRollout(rcDef, insertedAdv, initialAdv.orElseThrow())
+            is ConnectorRegistryDestinationDefinition -> ConnectorRegistryConverters.toConnectorRollout(rcDef, insertedAdv, initialAdv.orElseThrow())
             else -> throw IllegalArgumentException("Unsupported type: ${rcDef!!::class.java}")
           }
         val existingRollout =
@@ -236,24 +227,19 @@ class ApplyDefinitionsHelper(
             connectorRollout.releaseCandidateVersionId,
           )
         if (existingRollout.isNotEmpty() && existingRollout.any { it.state != ConnectorEnumRolloutState.CANCELED }) {
-          log.info("Release candidate rollout configuration already exists for {}:{}", insertedAdv.dockerRepository, insertedAdv.dockerImageTag)
+          log.info { "Release candidate rollout configuration already exists for ${insertedAdv.dockerRepository}:${insertedAdv.dockerImageTag}" }
           continue
         }
         connectorRolloutService.insertConnectorRollout(connectorRollout)
-        log.info(
-          "Inserted release candidate rollout configuration for {}:{}; rcActorDefinitionVersion={} defaultActorDefinitionVersion={}",
-          insertedAdv.dockerRepository,
-          insertedAdv.dockerImageTag,
-          insertedAdv.versionId,
-          initialAdv.getOrNull()?.versionId,
-        )
+        log.info {
+          "Inserted release candidate rollout configuration for ${insertedAdv.dockerRepository}:${insertedAdv.dockerImageTag}; rcActorDefinitionVersion=${insertedAdv.versionId} defaultActorDefinitionVersion=${initialAdv.getOrNull()?.versionId}"
+        }
       } catch (e: Exception) {
-        log.error("An error occurred on connector rollout object creation", e)
+        log.error(e) { "An error occurred on connector rollout object creation" }
       }
     }
   }
 
-  @Throws(IOException::class, JsonValidationException::class, ConfigNotFoundException::class)
   private fun applyDestinationDefinition(
     actorDefinitionIdsAndDefaultVersions: Map<UUID, ActorDefinitionVersion>,
     newDef: ConnectorRegistryDestinationDefinition,
@@ -275,14 +261,14 @@ class ApplyDefinitionsHelper(
           try {
             ConnectorRegistryConverters.toRcDestinationDefinitions(newDef)
           } catch (e: Exception) {
-            log.error("Could not extract release candidates from the connector definition: {}", newDef.name, e)
+            log.error(e) { "Could not extract release candidates from the connector definition: ${newDef.name}" }
             emptyList()
           }
         }
 
       breakingChangesForDef = ConnectorRegistryConverters.toActorDefinitionBreakingChanges(newDef)
     } catch (e: IllegalArgumentException) {
-      log.error("Failed to convert source definition: {}", newDef.name, e)
+      log.error(e) { "Failed to convert source definition: ${newDef.name}" }
       trackDefinitionProcessed(
         newDef.dockerRepository,
         newDef.dockerImageTag,
@@ -293,7 +279,7 @@ class ApplyDefinitionsHelper(
 
     val connectorIsNew = !actorDefinitionIdsAndDefaultVersions.containsKey(newDestinationDef.destinationDefinitionId)
     if (connectorIsNew) {
-      log.info("Adding new connector {}:{}", newDef.dockerRepository, newDef.dockerImageTag)
+      log.info { "Adding new connector ${newDef.dockerRepository}:${newDef.dockerImageTag}" }
       destinationService.writeConnectorMetadata(newDestinationDef, newADV, breakingChangesForDef)
       newConnectorCount++
       trackDefinitionProcessed(newDef.dockerRepository, newDef.dockerImageTag, DefinitionProcessingSuccessOutcome.INITIAL_VERSION_ADDED)
@@ -310,17 +296,14 @@ class ApplyDefinitionsHelper(
     val shouldUpdateOldVersion = getShouldRefreshActorDefinitionDefaultVersion(currentDefaultADV, actorDefinitionIdsInUse, reImportVersionInUse)
 
     if (shouldUpdateActorDefinitionDefaultVersion) {
-      log.info(
-        "Updating default version for connector {}: {} -> {}",
-        currentDefaultADV.dockerRepository,
-        currentDefaultADV.dockerImageTag,
-        newADV.dockerImageTag,
-      )
+      log.info {
+        "Updating default version for connector ${currentDefaultADV.dockerRepository}: ${currentDefaultADV.dockerImageTag} -> ${newADV.dockerImageTag}"
+      }
       destinationService.writeConnectorMetadata(newDestinationDef, newADV, breakingChangesForDef)
       changedConnectorCount++
       trackDefinitionProcessed(newDef.dockerRepository, newDef.dockerImageTag, DefinitionProcessingSuccessOutcome.DEFAULT_VERSION_UPDATED)
     } else if (shouldUpdateOldVersion) {
-      log.info("Refreshing default version metadata for connector ${currentDefaultADV.dockerRepository}:${currentDefaultADV.dockerImageTag}")
+      log.info { "Refreshing default version metadata for connector ${currentDefaultADV.dockerRepository}:${currentDefaultADV.dockerImageTag}" }
 
       val updatedADV =
         actorDefinitionVersionResolver.fetchRemoteActorDefinitionVersion(
@@ -352,7 +335,7 @@ class ApplyDefinitionsHelper(
     return reImportVersionInUse && definitionIsInUse
   }
 
-  @VisibleForTesting
+  @InternalForTesting
   internal fun getShouldUpdateActorDefinitionDefaultVersion(
     currentDefaultADV: ActorDefinitionVersion,
     newADV: ActorDefinitionVersion,
@@ -389,12 +372,9 @@ class ApplyDefinitionsHelper(
       .filter { def: ConnectorRegistryDestinationDefinition ->
         val isSupported = isProtocolVersionSupported(protocolVersionRange.get(), def.spec.protocolVersion)
         if (!isSupported) {
-          log.warn(
-            "Destination {} {} has an incompatible protocol version ({})... ignoring.",
-            def.destinationDefinitionId,
-            def.name,
-            def.spec.protocolVersion,
-          )
+          log.warn {
+            "Destination ${def.destinationDefinitionId} ${def.name} has an incompatible protocol version (${def.spec.protocolVersion})... ignoring."
+          }
           trackDefinitionProcessed(def.dockerRepository, def.dockerImageTag, DefinitionProcessingFailureReason.INCOMPATIBLE_PROTOCOL_VERSION)
         }
         isSupported
@@ -414,12 +394,7 @@ class ApplyDefinitionsHelper(
       .filter { def: ConnectorRegistrySourceDefinition ->
         val isSupported = isProtocolVersionSupported(protocolVersionRange.get(), def.spec.protocolVersion)
         if (!isSupported) {
-          log.warn(
-            "Source {} {} has an incompatible protocol version ({})... ignoring.",
-            def.sourceDefinitionId,
-            def.name,
-            def.spec.protocolVersion,
-          )
+          log.warn { "Source ${def.sourceDefinitionId} ${def.name} has an incompatible protocol version (${def.spec.protocolVersion})... ignoring." }
           trackDefinitionProcessed(def.dockerRepository, def.dockerImageTag, DefinitionProcessingFailureReason.INCOMPATIBLE_PROTOCOL_VERSION)
         }
         isSupported
@@ -434,7 +409,7 @@ class ApplyDefinitionsHelper(
       .filter { def: ConnectorRegistrySourceDefinition ->
         val isConnectorSupported = airbyteCompatibleConnectorsValidator.validate(def.sourceDefinitionId.toString(), def.dockerImageTag)
         if (!isConnectorSupported.isValid) {
-          log.warn(isConnectorSupported.message)
+          log.warn { isConnectorSupported.message }
           trackDefinitionProcessed(def.dockerRepository, def.dockerImageTag, DefinitionProcessingFailureReason.INCOMPATIBLE_AIRBYTE_VERSION)
         }
         isConnectorSupported.isValid
@@ -448,7 +423,7 @@ class ApplyDefinitionsHelper(
       .filter { def: ConnectorRegistryDestinationDefinition ->
         val isNewConnectorVersionSupported = airbyteCompatibleConnectorsValidator.validate(def.destinationDefinitionId.toString(), def.dockerImageTag)
         if (!isNewConnectorVersionSupported.isValid) {
-          log.warn(isNewConnectorVersionSupported.message)
+          log.warn { isNewConnectorVersionSupported.message }
           trackDefinitionProcessed(def.dockerRepository, def.dockerImageTag, DefinitionProcessingFailureReason.INCOMPATIBLE_AIRBYTE_VERSION)
         }
         isNewConnectorVersionSupported.isValid
@@ -469,6 +444,6 @@ class ApplyDefinitionsHelper(
   }
 
   companion object {
-    private val log: Logger = LoggerFactory.getLogger(ApplyDefinitionsHelper::class.java)
+    private val log = KotlinLogging.logger {}
   }
 }

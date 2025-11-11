@@ -6,6 +6,7 @@ package io.airbyte.server.apis.controllers
 
 import com.fasterxml.jackson.databind.JsonNode
 import io.airbyte.api.generated.BillingApi
+import io.airbyte.api.model.generated.BillingBackfillUsageRequest
 import io.airbyte.api.model.generated.CancelSubscriptionRead
 import io.airbyte.api.model.generated.CustomerPortalRead
 import io.airbyte.api.model.generated.CustomerPortalRequestBody
@@ -17,11 +18,13 @@ import io.airbyte.api.model.generated.PaymentInformationRead
 import io.airbyte.api.problems.throwable.generated.ApiNotImplementedInOssProblem
 import io.airbyte.commons.auth.generated.Intent
 import io.airbyte.commons.auth.permissions.RequiresIntent
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
 import io.micronaut.http.annotation.Body
 import io.micronaut.http.annotation.Controller
 import io.micronaut.http.annotation.Post
 import io.micronaut.scheduling.annotation.ExecuteOn
+import io.micronaut.security.annotation.Secured
 
 @Controller("/api/v1/billing")
 open class BillingController : BillingApi {
@@ -46,7 +49,7 @@ open class BillingController : BillingApi {
     @Body organizationIdRequestBody: OrganizationIdRequestBody,
   ): PaymentInformationRead = throw ApiNotImplementedInOssProblem()
 
-  @RequiresIntent(Intent.ManageOrganizationBilling)
+  @RequiresIntent(Intent.ViewOrganizationDetails)
   @Post("/subscription_info")
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun getSubscriptionInfo(
@@ -66,12 +69,20 @@ open class BillingController : BillingApi {
     @Body organizationIdRequestBody: OrganizationIdRequestBody,
   ): OrganizationTrialStatusRead = throw ApiNotImplementedInOssProblem()
 
+  @Secured(AuthRoleConstants.ADMIN)
+  @ExecuteOn(AirbyteTaskExecutors.IO)
+  override fun backfillUsage(billingBackfillUsageRequest: BillingBackfillUsageRequest): Unit = throw ApiNotImplementedInOssProblem()
+
   @RequiresIntent(Intent.ManageOrganizationBilling)
   @Post("/cancel_subscription")
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun cancelSubscription(
     @Body organizationIdRequestBody: OrganizationIdRequestBody,
   ): CancelSubscriptionRead = throw ApiNotImplementedInOssProblem()
+
+  @Secured(AuthRoleConstants.ADMIN)
+  @ExecuteOn(AirbyteTaskExecutors.IO)
+  override fun disableDelinquentWorkspaces(): Unit = throw ApiNotImplementedInOssProblem()
 
   @RequiresIntent(Intent.ManageOrganizationBilling)
   @Post("/unschedule_cancel_subscription")

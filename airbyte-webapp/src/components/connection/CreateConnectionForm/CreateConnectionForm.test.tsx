@@ -3,6 +3,7 @@ import React from "react";
 import { VirtuosoMockContext } from "react-virtuoso";
 
 import { mockConnection } from "test-utils/mock-data/mockConnection";
+import { mockGetDataplaneGroup } from "test-utils/mock-data/mockDataplaneGroups";
 import {
   mockDestinationDefinition,
   mockDestinationDefinitionSpecification,
@@ -16,16 +17,18 @@ import {
 import { mockTheme } from "test-utils/mock-data/mockTheme";
 import { mocked, TestWrapper, useMockIntersectionObserver } from "test-utils/testutils";
 
-import { useDiscoverSchema } from "core/api";
+import { useDiscoverSchemaQuery } from "core/api";
 
 import { CreateConnectionForm } from "./CreateConnectionForm";
 
-const mockBaseUseDiscoverSchema = {
-  schemaErrorStatus: null,
-  isLoading: false,
-  schema: mockConnection.syncCatalog,
-  catalogId: "",
-  onDiscoverSchema: () => Promise.resolve(),
+const mockBaseUseDiscoverSchemaQuery = {
+  error: null,
+  isFetching: false,
+  data: {
+    catalog: mockConnection.syncCatalog,
+    catalogId: "",
+  },
+  refetch: () => Promise.resolve(),
 };
 
 jest.mock("area/workspace/utils", () => ({
@@ -35,6 +38,10 @@ jest.mock("area/workspace/utils", () => ({
 
 jest.mock("core/api", () => ({
   useCurrentWorkspace: () => ({}),
+  useCurrentWorkspaceOrUndefined: () => ({
+    workspaceId: "workspace-id",
+    organizationId: "test-org-id",
+  }),
   useInvalidateWorkspaceStateQuery: () => () => null,
   useCreateConnection: () => async () => null,
   useSourceDefinitionVersion: () => mockSourceDefinitionVersion,
@@ -43,12 +50,42 @@ jest.mock("core/api", () => ({
   useGetDestinationDefinitionSpecification: () => mockDestinationDefinitionSpecification,
   useSourceDefinition: () => mockSourceDefinition,
   useDestinationDefinition: () => mockDestinationDefinition,
-  useDiscoverSchema: jest.fn(() => mockBaseUseDiscoverSchema),
+  useDiscoverSourceSchemaMutation: jest.fn(() => ({
+    mutateAsync: jest.fn(),
+    isLoading: false,
+  })),
+  useDiscoverSchemaQuery: jest.fn(() => mockBaseUseDiscoverSchemaQuery),
   ErrorWithJobInfo: jest.requireActual("core/api/errors").ErrorWithJobInfo,
   useDescribeCronExpressionFetchQuery: () => async () => ({
     isValid: true,
     cronDescription: "every hour",
     nextExecutions: [],
+  }),
+  useGetDataplaneGroup: () => mockGetDataplaneGroup,
+  useGetWebappConfig: () => ({
+    version: "test-version",
+    edition: "community",
+  }),
+  useCurrentOrganizationInfo: () => ({
+    organizationId: "test-org-id",
+    organizationName: "Test Organization",
+  }),
+  useFirstOrg: () => ({
+    organizationId: "test-org-id",
+    organizationName: "Test Organization",
+  }),
+  useListPermissions: () => ({
+    permissions: [],
+    isLoading: false,
+  }),
+  useOrgInfo: () => ({
+    billing: {
+      paymentStatus: "okay",
+    },
+  }),
+  useOrganizationTrialStatus: () => ({
+    trialStatus: "in_trial",
+    trialEndsAt: new Date(Date.now() + 86400000).toISOString(),
   }),
 }));
 
@@ -60,6 +97,18 @@ jest.mock("area/connector/utils", () => ({
 
 jest.mock("hooks/theme/useAirbyteTheme", () => ({
   useAirbyteTheme: () => mockTheme,
+}));
+
+jest.mock("core/services/auth", () => ({
+  useAuthService: jest.fn().mockReturnValue({
+    logout: jest.fn(),
+    login: jest.fn(),
+    isLoggedIn: jest.fn().mockReturnValue(true),
+  }),
+  useCurrentUser: jest.fn().mockReturnValue({
+    userId: "test-user-id",
+    email: "test@example.com",
+  }),
 }));
 
 jest.setTimeout(40000);
@@ -96,16 +145,25 @@ describe("CreateConnectionForm", () => {
   });
 
   it("should render when loading", async () => {
-    mocked(useDiscoverSchema).mockImplementationOnce(() => ({ ...mockBaseUseDiscoverSchema, isLoading: true }));
+    mocked(useDiscoverSchemaQuery).mockImplementationOnce(
+      () =>
+        ({
+          ...mockBaseUseDiscoverSchemaQuery,
+          isFetching: true,
+        }) as unknown as ReturnType<typeof useDiscoverSchemaQuery>
+    );
     const renderResult = await render();
     expect(renderResult).toMatchSnapshot();
   });
 
   it("should render with an error", async () => {
-    mocked(useDiscoverSchema).mockImplementationOnce(() => ({
-      ...mockBaseUseDiscoverSchema,
-      schemaErrorStatus: new Error("Test Error"),
-    }));
+    mocked(useDiscoverSchemaQuery).mockImplementationOnce(
+      () =>
+        ({
+          ...mockBaseUseDiscoverSchemaQuery,
+          error: new Error("Test Error"),
+        }) as unknown as ReturnType<typeof useDiscoverSchemaQuery>
+    );
 
     const renderResult = await render();
     expect(renderResult).toMatchSnapshot();

@@ -4,20 +4,22 @@
 
 package io.airbyte.commons.auth.config
 
-import io.airbyte.config.Configs
 import io.airbyte.config.Configs.AirbyteEdition
+import io.airbyte.micronaut.runtime.AirbyteAuthConfig
+import io.airbyte.micronaut.runtime.AirbyteConfig
+import io.airbyte.micronaut.runtime.AirbyteKeycloakConfig
+import io.airbyte.micronaut.runtime.DEFAULT_AUTH_IDENTITY_PROVIDER_TYPE
 import io.micronaut.context.annotation.Factory
-import io.micronaut.context.annotation.Primary
-import io.micronaut.context.annotation.Requires
+import io.micronaut.security.config.SecurityConfigurationProperties
 import jakarta.inject.Singleton
 
 /**
  * Data class representing the AuthConfigs for an Airbyte instance. This includes the [AuthMode] and
- * optional sub-configurations like [OidcConfig] and [AirbyteKeycloakConfiguration].
+ * optional sub-configurations like [OidcConfig] and [AirbyteKeycloakConfig].
  */
 data class AuthConfigs(
   val authMode: AuthMode,
-  val keycloakConfig: AirbyteKeycloakConfiguration? = null,
+  val keycloakConfig: AirbyteKeycloakConfig? = null,
   val oidcConfig: OidcConfig? = null,
   val initialUserConfig: InitialUserConfig? = null,
 )
@@ -36,41 +38,40 @@ enum class AuthMode {
 
 @Factory
 class AuthModeFactory(
-  private val airbyteEdition: Configs.AirbyteEdition,
+  private val airbyteConfig: AirbyteConfig,
+  private val airbyteAuthConfig: AirbyteAuthConfig,
+  private val micronautSecurityConfig: SecurityConfigurationProperties?,
 ) {
-  /**
-   * When the Airbyte edition is set to `community` and Micronaut Security is enabled, the
-   * `SIMPLE` auth mode is used regardless of the deployment mode or other configurations.
-   */
-  @Singleton
-  @Requires(property = "airbyte.edition", value = "community")
-  @Requires(property = "micronaut.security.enabled", value = "true")
-  @Primary
-  fun communityAuthMode(): AuthMode = AuthMode.SIMPLE
-
   /**
    * The default auth mode is determined by the deployment mode and edition.
    */
   @Singleton
   fun defaultAuthMode(): AuthMode =
-    when (airbyteEdition) {
+    when (airbyteConfig.edition) {
       AirbyteEdition.CLOUD -> AuthMode.OIDC
-      AirbyteEdition.ENTERPRISE -> AuthMode.OIDC
-      AirbyteEdition.COMMUNITY -> AuthMode.NONE
-      else -> throw IllegalStateException("Unknown or unspecified Airbyte edition: $airbyteEdition")
+      AirbyteEdition.ENTERPRISE -> {
+        when (airbyteAuthConfig.identityProvider.type) {
+          DEFAULT_AUTH_IDENTITY_PROVIDER_TYPE -> AuthMode.SIMPLE
+          else -> AuthMode.OIDC
+        }
+      }
+      AirbyteEdition.COMMUNITY -> {
+        if (micronautSecurityConfig?.isEnabled == true) AuthMode.SIMPLE else AuthMode.NONE
+      }
+      else -> throw IllegalStateException("Unknown or unspecified Airbyte edition: ${airbyteConfig.edition}")
     }
 }
 
 /**
  * This factory provides an Application's AuthConfigs based on the deployment mode and edition.
- * It includes optional sub-configurations, like the [OidcConfig] and [AirbyteKeycloakConfiguration]
+ * It includes optional sub-configurations, like the [OidcConfig] and [AirbyteKeycloakConfig]
  * for convenience, even though those configurations are managed by their own factories and can be
  * injected independently.
  */
 @Factory
 class AuthConfigFactory(
   private val authMode: AuthMode,
-  private val keycloakConfig: AirbyteKeycloakConfiguration? = null,
+  private val keycloakConfig: AirbyteKeycloakConfig,
   private val oidcConfig: OidcConfig? = null,
   private val initialUserConfig: InitialUserConfig? = null,
 ) {

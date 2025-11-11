@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { useEffectOnce } from "react-use";
 
@@ -7,7 +7,6 @@ import { Text } from "components/ui/Text";
 
 import { useGetSourceFromParams } from "area/connector/utils";
 import {
-  useConnectionList,
   useSourceDefinitionVersion,
   useGetSourceDefinitionSpecification,
   useSourceDefinition,
@@ -17,9 +16,10 @@ import {
 } from "core/api";
 import { useTrackPage, PageTrackingCodes } from "core/services/analytics";
 import { trackTiming } from "core/utils/datadog";
+import { useExperiment } from "hooks/services/Experiment";
 import { useFormChangeTrackerService, useUniqueFormId } from "hooks/services/FormChangeTracker";
 import { useDeleteModal } from "hooks/useDeleteModal";
-import { ConnectorCard } from "views/Connector/ConnectorCard";
+import { ConnectorCard, NextConnectorCard } from "views/Connector/ConnectorCard";
 import { ConnectorCardValues } from "views/Connector/ConnectorForm";
 
 import styles from "./SourceSettingsPage.module.scss";
@@ -27,11 +27,11 @@ import styles from "./SourceSettingsPage.module.scss";
 export const SourceSettingsPage: React.FC = () => {
   const { formatMessage } = useIntl();
   const source = useGetSourceFromParams();
-  const connectionList = useConnectionList({ sourceId: [source.sourceId] });
-  const connectionsWithSource = useMemo(() => connectionList?.connections ?? [], [connectionList]);
   const sourceDefinition = useSourceDefinition(source.sourceDefinitionId);
   const sourceDefinitionVersion = useSourceDefinitionVersion(source.sourceId);
   const sourceDefinitionSpecification = useGetSourceDefinitionSpecification(source.sourceId);
+  const useNextConnectorCard = useExperiment("connector.updatedSetupUx");
+  const CardComponent = useNextConnectorCard ? NextConnectorCard : ConnectorCard;
 
   const reloadSource = useInvalidateSource(source.sourceId);
   const { mutateAsync: updateSource } = useUpdateSource();
@@ -54,37 +54,23 @@ export const SourceSettingsPage: React.FC = () => {
 
   const onDelete = useCallback(async () => {
     clearFormChange(formId);
-    await deleteSource({ connectionsWithSource, source });
-  }, [clearFormChange, formId, deleteSource, connectionsWithSource, source]);
+    await deleteSource({ source });
+  }, [clearFormChange, formId, deleteSource, source]);
 
-  const modalAdditionalContent = useMemo<React.ReactNode>(() => {
-    if (connectionsWithSource.length === 0) {
-      return null;
-    }
-
-    return (
-      <Box pt="lg">
-        <Text size="lg">
-          <FormattedMessage
-            id="tables.affectedConnectionsOnDeletion"
-            values={{ count: connectionsWithSource.length }}
-          />
-        </Text>
-
-        <ul>
-          {connectionsWithSource.map((connection) => (
-            <li key={connection.connectionId}>{`${connection.name}`}</li>
-          ))}
-        </ul>
-      </Box>
-    );
-  }, [connectionsWithSource]);
-
-  const onDeleteClick = useDeleteModal("source", onDelete, modalAdditionalContent, source.name);
+  const onDeleteClick = useDeleteModal(
+    "source",
+    onDelete,
+    <Box mt="md">
+      <Text bold>
+        <FormattedMessage id="tables.deleteAssociatedConnectionsWarning" />
+      </Text>
+    </Box>,
+    source.name
+  );
 
   return (
     <div className={styles.content}>
-      <ConnectorCard
+      <CardComponent
         formType="source"
         title={formatMessage({ id: "sources.sourceSettings" })}
         isEditMode

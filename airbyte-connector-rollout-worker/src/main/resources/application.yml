@@ -28,34 +28,22 @@ micronaut:
     enabled: true
     filter:
       enabled: false
-    oauth2:
-      clients:
-        keycloak:
-          client-id: ${KEYCLOAK_CLIENT_ID:}
-          client-secret: ${KEYCLOAK_CLIENT_SECRET:}
-          client-credentials:
-            enabled: true
-          openid:
-            issuer: ${KEYCLOAK_INTERNAL_REALM_ISSUER:}
 
 airbyte:
-  control-plane-auth-endpoint: ${CONTROL_PLANE_AUTH_ENDPOINT:}
+  control-plane:
+    auth-endpoint: ${CONTROL_PLANE_AUTH_ENDPOINT:}
   edition: ${AIRBYTE_EDITION:COMMUNITY}
   internal-api:
-    auth-header:
-      name: ${AIRBYTE_API_AUTH_HEADER_NAME:}
-      value: ${AIRBYTE_API_AUTH_HEADER_VALUE:}
-    keycloak-auth-client:
-      secret-name: ${KEYCLOAK_AUTH_CLIENT_SECRET_NAME:}
-      secret-key: ${KEYCLOAK_AUTH_CLIENT_SECRET_KEY:}
     base-path: ${INTERNAL_API_HOST}/api
     connect-timeout-seconds: ${AIRBYTE_API_CONNECT_TIMEOUT_SECONDS:30}
     read-timeout-seconds: ${AIRBYTE_API_READ_TIMEOUT_SECONDS:600}
     retries:
       delay-seconds: ${AIRBYTE_API_RETRY_DELAY_SECONDS:2}
       max: ${AIRBYTE_API_MAX_RETRIES:5}
-  acceptance.test.enabled: ${ACCEPTANCE_TEST_ENABLED:false}
-  role: ${AIRBYTE_ROLE:}
+    auth:
+      type: INTERNAL_CLIENT_TOKEN
+      signature-secret: ${AB_JWT_SIGNATURE_SECRET:}
+  acceptance-test-enabled: ${ACCEPTANCE_TEST_ENABLED:false}
   tracking:
     strategy: ${TRACKING_STRATEGY:LOGGING}
     write-key: ${SEGMENT_WRITE_KEY:}
@@ -67,28 +55,22 @@ airbyte:
     github_workflow:
       dispatch_url: "https://api.github.com/repos/airbytehq/airbyte/actions/workflows/finalize_rollout.yml/dispatches"
       github_token: ${CONNECTOR_ROLLOUT_GITHUB_AIRBYTE_PAT:}
+  temporal:
+    cloud:
+      client:
+        cert: ${TEMPORAL_CLOUD_CLIENT_CERT:}
+        key: ${TEMPORAL_CLOUD_CLIENT_KEY:}
+      enabled: ${TEMPORAL_CLOUD_ENABLED:false}
+      host: ${TEMPORAL_CLOUD_HOST:}
+      namespace: ${TEMPORAL_CLOUD_NAMESPACE:}
+    host: ${TEMPORAL_HOST:`airbyte-temporal:7233`}
+    retention: ${TEMPORAL_HISTORY_RETENTION_IN_DAYS:30}
+    sdk:
+      timeouts:
+        rpc-timeout: ${TEMPORAL_SDK_RPC_TIMEOUT:60s}
+        rpc-long-poll-timeout: ${TEMPORAL_SDK_RPC_LONG_POLL_TIMEOUT:70s}
+        rpc-query-timeout: ${TEMPORAL_SDK_RPC_QUERY_TIMEOUT:10s}
 
-temporal:
-  cloud:
-    client:
-      cert: ${TEMPORAL_CLOUD_CLIENT_CERT:}
-      key: ${TEMPORAL_CLOUD_CLIENT_KEY:}
-    enabled: ${TEMPORAL_CLOUD_ENABLED:false}
-    host: ${TEMPORAL_CLOUD_HOST:}
-    namespace: ${TEMPORAL_CLOUD_NAMESPACE:}
-  host: ${TEMPORAL_HOST:`airbyte-temporal:7233`}
-  retention: ${TEMPORAL_HISTORY_RETENTION_IN_DAYS:30}
-  sdk:
-    timeouts:
-      rpc-timeout: ${TEMPORAL_SDK_RPC_TIMEOUT:60s}
-      rpc-long-poll-timeout: ${TEMPORAL_SDK_RPC_LONG_POLL_TIMEOUT:70s}
-      rpc-query-timeout: ${TEMPORAL_SDK_RPC_QUERY_TIMEOUT:10s}
-
-datadog:
-  agent:
-    host: ${DD_AGENT_HOST:}
-    port: ${DD_DOGSTATSD_PORT:}
-  orchestrator.disabled.integrations: ${DD_ORCHESTRATOR_DISABLED_INTEGRATIONS:GRPC,GRPC_CLIENT,GRPC_SERVER,NETTY,NETTY_4_1,GOOGLE_HTTP_CLIENT,HTTPURLCONNECTION,URLCONNECTION}
 google.application.credentials: ${GOOGLE_APPLICATION_CREDENTIALS:}
 
 jackson:
@@ -96,6 +78,8 @@ jackson:
     ACCEPT_CASE_INSENSITIVE_ENUMS: true
 
 endpoints:
+  all:
+    port: 8085
   beans:
     enabled: true
     sensitive: false

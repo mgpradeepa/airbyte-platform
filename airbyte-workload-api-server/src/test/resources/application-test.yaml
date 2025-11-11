@@ -11,6 +11,8 @@ micronaut:
   http:
     client:
       event-loop-group: other
+  server:
+    port: -1 # Random port for tests
 
 airbyte:
   flyway:
@@ -25,7 +27,7 @@ airbyte:
     base-path: https://localhost:8001/api/v1
 
 datasources:
-  workload:
+  config:
     url: jdbc:h2:mem:default
     driverClassName: org.h2.Driver
     username: sa
@@ -36,6 +38,10 @@ jooq:
     workload:
       jackson-converter-enabled: true
       sql-dialect: POSTGRES
+
+endpoints:
+  all:
+    port: -1 # Random port for tests
 
 logger:
   levels:

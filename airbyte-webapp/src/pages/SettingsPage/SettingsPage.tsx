@@ -10,7 +10,8 @@ import { useCurrentWorkspace, useGetInstanceConfiguration } from "core/api";
 import { InstanceConfigurationResponseTrackingStrategy } from "core/api/types/AirbyteClient";
 import { useAuthService } from "core/services/auth";
 import { FeatureItem, useFeature } from "core/services/features";
-import { useIntent } from "core/utils/rbac";
+import { Intent, useGeneratedIntent, useIntent } from "core/utils/rbac";
+import { useExperiment } from "hooks/services/Experiment";
 import { useGetConnectorsOutOfDate } from "hooks/services/useConnector";
 import { SettingsRoutePaths } from "pages/routePaths";
 
@@ -19,32 +20,35 @@ export const SettingsPage: React.FC = () => {
   const { organizationId, workspaceId } = useCurrentWorkspace();
   const { trackingStrategy } = useGetInstanceConfiguration();
   const { countNewSourceVersion, countNewDestinationVersion } = useGetConnectorsOutOfDate();
-  const multiWorkspaceUI = useFeature(FeatureItem.MultiWorkspaceUI);
-  const { applicationSupport } = useAuthService();
+  // FeatureItem.ShowWorkspacePicker is weirdly being used as a proxy for showing RBAC and source/destination settings
+  // pages here. We should clean this up so that we use more appropriate feature items for toggling these pages.
+  const showWorkspacePicker = useFeature(FeatureItem.ShowWorkspacePicker);
   const licenseUi = useFeature(FeatureItem.EnterpriseLicenseChecking);
   const canViewLicenseSettings = useIntent("ViewLicenseDetails", { workspaceId });
   const displayOrganizationUsers = useFeature(FeatureItem.DisplayOrganizationUsers);
-  const canViewWorkspaceSettings = useIntent("ViewWorkspaceSettings", { workspaceId });
+  const canViewWorkspaceSettings = useGeneratedIntent(Intent.ViewWorkspaceSettings);
   const canViewOrganizationSettings = useIntent("ViewOrganizationSettings", { organizationId });
+  const showOrgPicker = useExperiment("sidebar.showOrgPickerV2");
+  const { authType } = useAuthService();
+
   const showLicenseUi = licenseUi && canViewLicenseSettings;
+  const showOrganizationSection =
+    !showOrgPicker && showWorkspacePicker && (canViewOrganizationSettings || canViewWorkspaceSettings);
 
   return (
     <SettingsLayout>
       <SettingsNavigation>
-        <SettingsNavigationBlock title={formatMessage({ id: "settings.userSettings" })}>
-          <SettingsLink
-            iconType="user"
-            name={formatMessage({ id: "settings.account" })}
-            to={SettingsRoutePaths.Account}
-          />
-          {applicationSupport !== "none" && (
+        {/* When auth is not enabled in OSS, the user settings link in the sidebar is not visible. We still want the user to
+        be able to change their email, so this section shows up in the workspace settings instead. */}
+        {authType === "none" && (
+          <SettingsNavigationBlock title={formatMessage({ id: "settings.userSettings" })}>
             <SettingsLink
-              iconType="grid"
-              name={formatMessage({ id: "settings.applications" })}
-              to={SettingsRoutePaths.Applications}
+              iconType="user"
+              name={formatMessage({ id: "settings.account" })}
+              to={SettingsRoutePaths.Account}
             />
-          )}
-        </SettingsNavigationBlock>
+          </SettingsNavigationBlock>
+        )}
         <SettingsNavigationBlock title={formatMessage({ id: "settings.workspaceSettings" })}>
           <SettingsLink
             iconType="gear"
@@ -53,14 +57,14 @@ export const SettingsPage: React.FC = () => {
             })}
             to={SettingsRoutePaths.Workspace}
           />
-          {multiWorkspaceUI && canViewWorkspaceSettings && (
+          {showWorkspacePicker && canViewWorkspaceSettings && (
             <SettingsLink
               iconType="community"
               name={formatMessage({ id: "settings.members" })}
               to={SettingsRoutePaths.WorkspaceMembers}
             />
           )}
-          {canViewWorkspaceSettings && !multiWorkspaceUI && (
+          {canViewWorkspaceSettings && !showWorkspacePicker && (
             <>
               <SettingsLink
                 iconType="source"
@@ -90,8 +94,8 @@ export const SettingsPage: React.FC = () => {
             />
           )}
         </SettingsNavigationBlock>
-        {multiWorkspaceUI && (canViewOrganizationSettings || canViewWorkspaceSettings) && (
-          <SettingsNavigationBlock title={formatMessage({ id: "settings.organizationSettings" })}>
+        {showOrganizationSection && (
+          <SettingsNavigationBlock title={formatMessage({ id: "settings.organization" })}>
             {canViewOrganizationSettings && (
               <>
                 <SettingsLink

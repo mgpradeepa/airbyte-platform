@@ -7,12 +7,13 @@ package io.airbyte.commons.server.services
 import io.airbyte.analytics.BillingTrackingHelper
 import io.airbyte.api.problems.throwable.generated.ResourceNotFoundProblem
 import io.airbyte.api.problems.throwable.generated.StateConflictProblem
-import io.airbyte.commons.server.ConnectionId
-import io.airbyte.commons.server.OrganizationId
+import io.airbyte.commons.entitlements.EntitlementService
 import io.airbyte.config.OrganizationPaymentConfig
 import io.airbyte.config.OrganizationPaymentConfig.PaymentStatus
 import io.airbyte.config.OrganizationPaymentConfig.SubscriptionStatus
 import io.airbyte.data.services.shared.ConnectionAutoDisabledReason
+import io.airbyte.domain.models.ConnectionId
+import io.airbyte.domain.models.OrganizationId
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.mockk.Runs
@@ -32,6 +33,7 @@ class OrganizationServiceTest {
   private val connectionRepository: ConnectionRepository = mockk()
   private val organizationPaymentConfigRepository: OrganizationPaymentConfigRepository = mockk()
   private val billingTrackingHelper: BillingTrackingHelper = mockk()
+  private val entitlementService: EntitlementService = mockk(relaxed = true)
 
   private val service =
     OrganizationServiceImpl(
@@ -39,6 +41,7 @@ class OrganizationServiceTest {
       connectionRepository,
       organizationPaymentConfigRepository,
       billingTrackingHelper,
+      entitlementService,
     )
 
   private val organizationId = OrganizationId(UUID.randomUUID())
@@ -184,11 +187,11 @@ class OrganizationServiceTest {
   }
 
   @Nested
-  inner class HandleSubscriptionStarted {
+  inner class HandleSubscriptionStarted { //
     @Test
     fun `should throw if orgPaymentConfig is not found`() {
       every { organizationPaymentConfigRepository.findByOrganizationId(organizationId.value) } returns null
-      shouldThrow<ResourceNotFoundProblem> { service.handleSubscriptionStarted(organizationId) }
+      shouldThrow<ResourceNotFoundProblem> { service.handleSubscriptionStarted(organizationId, "test-plan", false) }
     }
 
     @Test
@@ -200,7 +203,7 @@ class OrganizationServiceTest {
 
       every { organizationPaymentConfigRepository.findByOrganizationId(organizationId.value) } returns orgPaymentConfig
 
-      service.handleSubscriptionStarted(organizationId)
+      service.handleSubscriptionStarted(organizationId, "test-plan", false)
 
       verify(exactly = 0) { organizationPaymentConfigRepository.savePaymentConfig(any()) }
       verify(exactly = 0) { connectionService.disableConnections(any(), any()) }
@@ -217,7 +220,7 @@ class OrganizationServiceTest {
       every { organizationPaymentConfigRepository.findByOrganizationId(organizationId.value) } returns orgPaymentConfig
       every { organizationPaymentConfigRepository.savePaymentConfig(capture(slotConfig)) } just Runs
 
-      service.handleSubscriptionStarted(organizationId)
+      service.handleSubscriptionStarted(organizationId, "test-plan", false)
 
       slotConfig.captured.subscriptionStatus shouldBe SubscriptionStatus.SUBSCRIBED
       verify { organizationPaymentConfigRepository.savePaymentConfig(orgPaymentConfig) }

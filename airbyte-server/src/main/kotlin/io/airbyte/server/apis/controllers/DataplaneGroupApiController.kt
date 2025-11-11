@@ -11,12 +11,20 @@ import io.airbyte.api.model.generated.DataplaneGroupListRequestBody
 import io.airbyte.api.model.generated.DataplaneGroupListResponse
 import io.airbyte.api.model.generated.DataplaneGroupRead
 import io.airbyte.api.model.generated.DataplaneGroupUpdateRequestBody
+import io.airbyte.api.model.generated.DataplaneRead
 import io.airbyte.api.problems.throwable.generated.DataplaneGroupNameAlreadyExistsProblem
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.DEFAULT_ORGANIZATION_ID
+import io.airbyte.commons.auth.generated.Intent
+import io.airbyte.commons.auth.permissions.RequiresIntent
+import io.airbyte.commons.auth.roles.AuthRoleConstants
+import io.airbyte.commons.entitlements.EntitlementService
+import io.airbyte.commons.entitlements.models.SelfManagedRegionsEntitlement
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
-import io.airbyte.commons.server.support.CurrentUserService
 import io.airbyte.config.DataplaneGroup
 import io.airbyte.data.services.DataplaneGroupService
+import io.airbyte.domain.models.DataplaneGroupId
+import io.airbyte.domain.models.OrganizationId
+import io.airbyte.server.services.DataplaneService
 import io.micronaut.context.annotation.Context
 import io.micronaut.http.annotation.Body
 import io.micronaut.http.annotation.Controller
@@ -28,73 +36,79 @@ import org.jooq.exception.DataAccessException
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import kotlin.jvm.optionals.getOrNull
 
 @Controller("/api/v1/dataplane_group")
 @Context
 @Secured(SecurityRule.IS_AUTHENTICATED)
 class DataplaneGroupApiController(
   protected val dataplaneGroupService: DataplaneGroupService,
-  protected val currentUserService: CurrentUserService,
+  protected val dataplaneService: DataplaneService,
+  private val entitlementService: EntitlementService,
 ) : DataplaneGroupApi {
   @Post("/create")
-  @Secured(AuthRoleConstants.ADMIN)
+  @RequiresIntent(Intent.ManageDataplaneGroups)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun createDataplaneGroup(
     @Body dataplaneGroupCreateRequestBody: DataplaneGroupCreateRequestBody,
   ): DataplaneGroupRead? {
+    entitlementService.ensureEntitled(OrganizationId(dataplaneGroupCreateRequestBody.organizationId), SelfManagedRegionsEntitlement)
     val createdDataplaneGroup =
       DataplaneGroup().apply {
         organizationId = dataplaneGroupCreateRequestBody.organizationId
         name = dataplaneGroupCreateRequestBody.name
         enabled = dataplaneGroupCreateRequestBody.enabled
-        updatedBy = currentUserService.currentUserIdIfExists.getOrNull()
       }
     return toDataplaneGroupRead(writeDataplaneGroup(createdDataplaneGroup))
   }
 
   @Post("/update")
-  @Secured(AuthRoleConstants.ADMIN)
+  @RequiresIntent(Intent.ManageDataplaneGroups)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun updateDataplaneGroup(
     @Body dataplaneGroupUpdateRequestBody: DataplaneGroupUpdateRequestBody,
-  ): DataplaneGroupRead? {
+  ): DataplaneGroupRead {
+    ensureManageDataplanesAndDataplaneGroupsEntitlement(DataplaneGroupId(dataplaneGroupUpdateRequestBody.dataplaneGroupId))
     val updatedDataplaneGroup = dataplaneGroupService.getDataplaneGroup(dataplaneGroupUpdateRequestBody.dataplaneGroupId)
 
     val dataplaneGroup =
       updatedDataplaneGroup.apply {
-        name = dataplaneGroupUpdateRequestBody.name
-        enabled = dataplaneGroupUpdateRequestBody.enabled
-        updatedBy = currentUserService.currentUserIdIfExists.getOrNull()
+        dataplaneGroupUpdateRequestBody.name?.let { name = it }
+        dataplaneGroupUpdateRequestBody.enabled?.let { enabled = it }
       }
 
     return toDataplaneGroupRead(writeDataplaneGroup(dataplaneGroup))
   }
 
   @Post("/delete")
-  @Secured(AuthRoleConstants.ADMIN)
+  @RequiresIntent(Intent.ManageDataplaneGroups)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun deleteDataplaneGroup(
     @Body dataplaneGroupDeleteRequestBody: DataplaneGroupDeleteRequestBody,
   ): DataplaneGroupRead? {
+    ensureManageDataplanesAndDataplaneGroupsEntitlement(DataplaneGroupId(dataplaneGroupDeleteRequestBody.dataplaneGroupId))
     val deletedDataplaneGroup = dataplaneGroupService.getDataplaneGroup(dataplaneGroupDeleteRequestBody.dataplaneGroupId)
-
     val tombstonedGroup =
       deletedDataplaneGroup.apply {
         tombstone = true
-        updatedBy = currentUserService.currentUserIdIfExists.getOrNull()
       }
-
+    dataplaneService.listDataplanes(dataplaneGroupDeleteRequestBody.dataplaneGroupId).forEach {
+      dataplaneService.deleteDataplane(it.id)
+    }
     return toDataplaneGroupRead(writeDataplaneGroup(tombstonedGroup))
   }
 
   @Post("/list")
-  @Secured(AuthRoleConstants.ADMIN)
+  // TODO: (parker) should this be more restrictive?
+  @Secured(AuthRoleConstants.AUTHENTICATED_USER)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun listDataplaneGroups(
     @Body dataplaneGroupListRequestBody: DataplaneGroupListRequestBody,
   ): DataplaneGroupListResponse? {
-    val dataplaneGroups = dataplaneGroupService.listDataplaneGroups(dataplaneGroupListRequestBody.organizationId, false)
+    val dataplaneGroups =
+      dataplaneGroupService.listDataplaneGroups(
+        listOf(DEFAULT_ORGANIZATION_ID, dataplaneGroupListRequestBody.organizationId),
+        false,
+      )
     return DataplaneGroupListResponse()
       .dataplaneGroups(
         dataplaneGroups.map { dataplaneGroup ->
@@ -112,8 +126,24 @@ class DataplaneGroupApiController(
       .enabled(dataplaneGroup.enabled)
       .createdAt(OffsetDateTime.ofInstant(Instant.ofEpochMilli(dataplaneGroup.createdAt), ZoneOffset.UTC))
       .updatedAt(OffsetDateTime.ofInstant(Instant.ofEpochMilli(dataplaneGroup.updatedAt), ZoneOffset.UTC))
-
+      .dataplanes(
+        dataplaneService.listDataplanes(dataplaneGroup.id).map {
+          DataplaneRead().apply {
+            dataplaneId = it.id
+            dataplaneGroupId = it.dataplaneGroupId
+            name = it.name
+            enabled = it.enabled
+            createdAt = OffsetDateTime.ofInstant(Instant.ofEpochMilli(it.createdAt), ZoneOffset.UTC)
+            updatedAt = OffsetDateTime.ofInstant(Instant.ofEpochMilli(it.updatedAt), ZoneOffset.UTC)
+          }
+        },
+      )
     return dataplaneGroupRead
+  }
+
+  private fun ensureManageDataplanesAndDataplaneGroupsEntitlement(dataplaneGroupId: DataplaneGroupId) {
+    val orgId = OrganizationId(dataplaneGroupService.getOrganizationIdFromDataplaneGroup(dataplaneGroupId.value))
+    entitlementService.ensureEntitled(orgId, SelfManagedRegionsEntitlement)
   }
 
   fun writeDataplaneGroup(dataplaneGroup: DataplaneGroup): DataplaneGroup {

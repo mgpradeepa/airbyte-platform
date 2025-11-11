@@ -29,6 +29,7 @@ val DESTINATION_NAME_TO_DEFINITION_ID: Map<String, UUID> =
     Pair("bigquery", UUID.fromString("22f6c74f-5699-40ff-833c-4a879ea40133")),
     Pair("pubsub", UUID.fromString("356668e2-7e34-47f3-a3b0-67a8a481b692")),
     Pair("s3", UUID.fromString("4816b78f-1489-44c1-9060-4b19d5fa9362")),
+    Pair("s3-data-lake", UUID.fromString("716ca874-520b-4902-9f80-9fad66754b89")),
     Pair("oracle", UUID.fromString("3986776d-2319-4de9-8af8-db14c0996e72")),
     Pair("sqlite", UUID.fromString("b76be0a6-27dc-4560-95f6-2623da0bd7b6")),
     Pair("azure-blob-storage", UUID.fromString("b4c5d105-31fd-4817-96b6-cb923bfc04cb")),
@@ -94,6 +95,7 @@ val DEFINITION_ID_TO_DESTINATION_NAME: Map<UUID, String> =
     Pair(UUID.fromString("22f6c74f-5699-40ff-833c-4a879ea40133"), "bigquery"),
     Pair(UUID.fromString("356668e2-7e34-47f3-a3b0-67a8a481b692"), "pubsub"),
     Pair(UUID.fromString("4816b78f-1489-44c1-9060-4b19d5fa9362"), "s3"),
+    Pair(UUID.fromString("716ca874-520b-4902-9f80-9fad66754b89"), "s3-data-lake"),
     Pair(UUID.fromString("3986776d-2319-4de9-8af8-db14c0996e72"), "oracle"),
     Pair(UUID.fromString("b76be0a6-27dc-4560-95f6-2623da0bd7b6"), "sqlite"),
     Pair(UUID.fromString("b4c5d105-31fd-4817-96b6-cb923bfc04cb"), "azure-blob-storage"),
@@ -433,6 +435,7 @@ val SOURCE_NAME_TO_DEFINITION_ID: Map<String, UUID> =
     Pair("onesignal", UUID.fromString("bb6afd81-87d5-47e3-97c4-e2c2901b1cf8")),
     Pair("flexport", UUID.fromString("f95337f1-2ad1-4baf-922f-2ca9152de630")),
     Pair("google-drive", UUID.fromString("9f8dda77-1048-4368-815b-269bf54ee9b8")),
+    Pair("microsoft-sharepoint", UUID.fromString("59353119-f0f2-4e5a-a8ba-15d887bc34f6")),
   )
 
 val DEFINITION_ID_TO_SOURCE_NAME: Map<UUID, String> =
@@ -727,4 +730,5 @@ val DEFINITION_ID_TO_SOURCE_NAME: Map<UUID, String> =
     Pair(UUID.fromString("bb6afd81-87d5-47e3-97c4-e2c2901b1cf8"), "onesignal"),
     Pair(UUID.fromString("f95337f1-2ad1-4baf-922f-2ca9152de630"), "flexport"),
     Pair(UUID.fromString("9f8dda77-1048-4368-815b-269bf54ee9b8"), "google-drive"),
+    Pair(UUID.fromString("59353119-f0f2-4e5a-a8ba-15d887bc34f6"), "microsoft-sharepoint"),
   )

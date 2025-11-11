@@ -25,11 +25,14 @@ data class ConnectionTimelineEvent(
   @field:TypeDef(type = DataType.JSON)
   var summary: String? = null,
   var createdAt: OffsetDateTime? = null,
+  var jobId: Long? = null,
 )
 
 @Introspected
 data class ConnectionTimelineEventMinimal(
   val id: UUID,
+  @MappedProperty("connection_name")
+  val connectionName: String?,
   @MappedProperty("connection_id")
   val connectionId: UUID,
   @MappedProperty("created_at")

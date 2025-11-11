@@ -14,7 +14,7 @@ import {
 import { useCurrentWorkspace } from "core/api";
 import { FeatureItem, useFeature } from "core/services/features";
 import { isOsanoActive, showOsanoDrawer } from "core/utils/dataPrivacy";
-import { Intent, useIntent, useGeneratedIntent } from "core/utils/rbac";
+import { Intent, useGeneratedIntent } from "core/utils/rbac";
 import { useExperiment } from "hooks/services/Experiment";
 
 import { CloudSettingsRoutePaths } from "./routePaths";
@@ -23,40 +23,45 @@ export const CloudSettingsPage: React.FC = () => {
   const { formatMessage } = useIntl();
   const supportsCloudDbtIntegration = useFeature(FeatureItem.AllowDBTCloudIntegration);
   const workspace = useCurrentWorkspace();
-  const canViewOrgSettings = useIntent("ViewOrganizationSettings", { organizationId: workspace.organizationId });
+  const canViewOrgSettings = useGeneratedIntent(Intent.ViewOrganizationSettings, {
+    organizationId: workspace.organizationId,
+  });
   const showAdvancedSettings = useExperiment("settings.showAdvancedSettings");
   const canManageOrganizationBilling = useGeneratedIntent(Intent.ManageOrganizationBilling);
   const canViewOrganizationUsage = useGeneratedIntent(Intent.ViewOrganizationUsage);
+  const showOrgPicker = useExperiment("sidebar.showOrgPickerV2");
 
   return (
     <SettingsLayout>
       <SettingsNavigation>
-        <SettingsNavigationBlock title={formatMessage({ id: "settings.userSettings" })}>
-          <SettingsLink
-            iconType="user"
-            name={formatMessage({ id: "settings.account" })}
-            to={CloudSettingsRoutePaths.Account}
-          />
-          <SettingsLink
-            iconType="grid"
-            name={formatMessage({ id: "settings.applications" })}
-            to={CloudSettingsRoutePaths.Applications}
-          />
-          {isOsanoActive() && (
-            <SettingsButton
-              iconType="parameters"
-              onClick={() => showOsanoDrawer()}
-              name={formatMessage({ id: "settings.cookiePreferences" })}
-            />
-          )}
-          {showAdvancedSettings && (
+        {!showOrgPicker && (
+          <SettingsNavigationBlock title={formatMessage({ id: "settings.userSettings" })}>
             <SettingsLink
-              iconType="gear"
-              name={formatMessage({ id: "settings.advanced" })}
-              to={CloudSettingsRoutePaths.Advanced}
+              iconType="user"
+              name={formatMessage({ id: "settings.account" })}
+              to={CloudSettingsRoutePaths.Account}
             />
-          )}
-        </SettingsNavigationBlock>
+            <SettingsLink
+              iconType="grid"
+              name={formatMessage({ id: "settings.applications" })}
+              to={CloudSettingsRoutePaths.Applications}
+            />
+            {isOsanoActive() && (
+              <SettingsButton
+                iconType="parameters"
+                onClick={() => showOsanoDrawer()}
+                name={formatMessage({ id: "settings.cookiePreferences" })}
+              />
+            )}
+            {showAdvancedSettings && (
+              <SettingsLink
+                iconType="gear"
+                name={formatMessage({ id: "settings.advanced" })}
+                to={CloudSettingsRoutePaths.Advanced}
+              />
+            )}
+          </SettingsNavigationBlock>
+        )}
         <SettingsNavigationBlock title={formatMessage({ id: "settings.workspaceSettings" })}>
           <SettingsLink
             iconType="gear"
@@ -97,8 +102,8 @@ export const CloudSettingsPage: React.FC = () => {
             to={CloudSettingsRoutePaths.Usage}
           />
         </SettingsNavigationBlock>
-        {canViewOrgSettings && (
-          <SettingsNavigationBlock title={formatMessage({ id: "settings.organizationSettings" })}>
+        {canViewOrgSettings && !showOrgPicker && (
+          <SettingsNavigationBlock title={formatMessage({ id: "settings.organization" })}>
             <SettingsLink
               iconType="gear"
               name={formatMessage({ id: "settings.general" })}

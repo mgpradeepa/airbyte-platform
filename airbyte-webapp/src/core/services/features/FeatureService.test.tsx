@@ -56,28 +56,187 @@ describe("Feature Service", () => {
       expect(result.current.sort()).toEqual([FeatureItem.AllowDBTCloudIntegration]);
     });
 
+    describe("entitlement overwrites", () => {
+      it("should allow setting entitlement overwrites", () => {
+        const { result } = renderHook(
+          () => {
+            const { features, setEntitlementOverwrites } = useFeatureService();
+            useEffect(() => {
+              setEntitlementOverwrites({ [FeatureItem.AllowUploadCustomImage]: true });
+            }, [setEntitlementOverwrites]);
+            return features;
+          },
+          { wrapper }
+        );
+        expect(result.current.sort()).toEqual([
+          FeatureItem.AllowDBTCloudIntegration,
+          FeatureItem.AllowUploadCustomImage,
+        ]);
+      });
+
+      it("should allow clearing entitlement overwrites", () => {
+        const { result, rerender } = renderHook(
+          ({ overwrite }: { overwrite?: FeatureSet }) => {
+            const { features, setEntitlementOverwrites } = useFeatureService();
+            useEffect(() => {
+              setEntitlementOverwrites(overwrite ?? {});
+            }, [overwrite, setEntitlementOverwrites]);
+            return features;
+          },
+          {
+            wrapper,
+            initialProps: {
+              overwrite: { [FeatureItem.AllowUploadCustomImage]: true } as FeatureSet,
+            },
+          }
+        );
+        expect(result.current.sort()).toEqual([
+          FeatureItem.AllowDBTCloudIntegration,
+          FeatureItem.AllowUploadCustomImage,
+        ]);
+        rerender({ overwrite: {} as FeatureSet });
+        expect(result.current.sort()).toEqual([FeatureItem.AllowDBTCloudIntegration]);
+      });
+
+      it("should merge feature flag and entitlement overwrites", () => {
+        const { result } = renderHook(
+          () => {
+            const { features, setFeatureOverwrites, setEntitlementOverwrites } = useFeatureService();
+            useEffect(() => {
+              setFeatureOverwrites({ [FeatureItem.AllowUploadCustomImage]: true });
+              setEntitlementOverwrites({ [FeatureItem.AllowUpdateConnectors]: true });
+            }, [setFeatureOverwrites, setEntitlementOverwrites]);
+            return features;
+          },
+          { wrapper }
+        );
+        expect(result.current.sort()).toEqual([
+          FeatureItem.AllowDBTCloudIntegration,
+          FeatureItem.AllowUpdateConnectors,
+          FeatureItem.AllowUploadCustomImage,
+        ]);
+      });
+
+      it("should prioritize feature flag overwrites over entitlement overwrites when ff disabled", () => {
+        const { result } = renderHook(
+          () => {
+            const { features, setFeatureOverwrites, setEntitlementOverwrites } = useFeatureService();
+            useEffect(() => {
+              setFeatureOverwrites({ [FeatureItem.AllowDBTCloudIntegration]: false });
+              setEntitlementOverwrites({ [FeatureItem.AllowDBTCloudIntegration]: true });
+            }, [setFeatureOverwrites, setEntitlementOverwrites]);
+            return features;
+          },
+          { wrapper }
+        );
+        expect(result.current.sort()).toEqual([]);
+      });
+
+      it("should prioritize feature flag overwrites over entitlement overwrites when ff enabled", () => {
+        const { result } = renderHook(
+          () => {
+            const { features, setFeatureOverwrites, setEntitlementOverwrites } = useFeatureService();
+            useEffect(() => {
+              setFeatureOverwrites({ [FeatureItem.AllowDBTCloudIntegration]: true });
+              setEntitlementOverwrites({ [FeatureItem.AllowDBTCloudIntegration]: false });
+            }, [setFeatureOverwrites, setEntitlementOverwrites]);
+            return features;
+          },
+          { wrapper }
+        );
+        expect(result.current.sort()).toEqual([FeatureItem.AllowDBTCloudIntegration]);
+      });
+    });
+
+    describe("priority system", () => {
+      beforeEach(() => {
+        // Use a feature that we can control via env variable for testing
+        process.env.REACT_APP_FEATURE_ALLOW_UPDATE_CONNECTORS = "true";
+        (process.env.NODE_ENV as string) = "development";
+      });
+
+      afterEach(() => {
+        process.env.REACT_APP_FEATURE_ALLOW_UPDATE_CONNECTORS = undefined;
+        (process.env.NODE_ENV as string) = "test";
+      });
+
+      it("should prioritize feature flag overwrites over entitlement overwrites", () => {
+        const { result } = renderHook(
+          () => {
+            const { features, setFeatureOverwrites, setEntitlementOverwrites } = useFeatureService();
+            useEffect(() => {
+              // Set entitlement to true
+              setEntitlementOverwrites({ [FeatureItem.AllowUploadCustomImage]: true });
+              // Set feature flag to false (should take precedence)
+              setFeatureOverwrites({ [FeatureItem.AllowUploadCustomImage]: false });
+            }, [setFeatureOverwrites, setEntitlementOverwrites]);
+            return features;
+          },
+          { wrapper }
+        );
+        // Should not include the feature because feature flag (higher priority) is false
+        expect(result.current).not.toContain(FeatureItem.AllowUploadCustomImage);
+      });
+
+      it("should fall back to entitlement when feature flag is not set", () => {
+        const { result } = renderHook(
+          () => {
+            const { features, setEntitlementOverwrites } = useFeatureService();
+            useEffect(() => {
+              // Only set entitlement to true
+              setEntitlementOverwrites({ [FeatureItem.AllowUploadCustomImage]: true });
+              // Don't set feature flag
+            }, [setEntitlementOverwrites]);
+            return features;
+          },
+          { wrapper }
+        );
+        // Should include the feature because entitlement is true
+        expect(result.current).toContain(FeatureItem.AllowUploadCustomImage);
+      });
+
+      it("should prioritize env variable over feature flags and entitlements", () => {
+        const { result } = renderHook(
+          () => {
+            const { features, setFeatureOverwrites, setEntitlementOverwrites } = useFeatureService();
+            useEffect(() => {
+              // Set entitlement to false
+              setEntitlementOverwrites({ [FeatureItem.AllowUpdateConnectors]: false });
+              // Set feature flag to false
+              setFeatureOverwrites({ [FeatureItem.AllowUpdateConnectors]: false });
+              // Env variable is set to "true" in beforeEach (highest priority)
+            }, [setFeatureOverwrites, setEntitlementOverwrites]);
+            return features;
+          },
+          { wrapper }
+        );
+        // Should include the feature because env variable (highest priority) is true
+        expect(result.current).toContain(FeatureItem.AllowUpdateConnectors);
+      });
+    });
+
     describe("env variable overwrites", () => {
       beforeEach(() => {
         process.env.REACT_APP_FEATURE_ALLOW_SYNC = "false";
-        process.env.REACT_APP_FEATURE_ALLOW_CHANGE_DATA_GEOGRAPHIES = "true";
+        process.env.REACT_APP_FEATURE_ALLOW_CHANGE_DATAPLANES = "true";
       });
 
       afterEach(() => {
         (process.env.NODE_ENV as string) = "test";
         process.env.REACT_APP_FEATURE_ALLOW_SYNC = undefined;
-        process.env.REACT_APP_FEATURE_ALLOW_CHANGE_DATA_GEOGRAPHIES = undefined;
+        process.env.REACT_APP_FEATURE_ALLOW_CHANGE_DATAPLANES = undefined;
       });
 
       it("should allow overwriting it in dev", () => {
         (process.env.NODE_ENV as string) = "development";
         const getFeature = (feature: FeatureItem) => renderHook(() => useFeature(feature), { wrapper }).result.current;
-        expect(getFeature(FeatureItem.AllowChangeDataGeographies)).toBe(true);
+        expect(getFeature(FeatureItem.AllowChangeDataplanes)).toBe(true);
       });
 
       it("should not overwrite in a non dev environment", () => {
         (process.env.NODE_ENV as string) = "production";
         const getFeature = (feature: FeatureItem) => renderHook(() => useFeature(feature), { wrapper }).result.current;
-        expect(getFeature(FeatureItem.AllowChangeDataGeographies)).toBe(false);
+        expect(getFeature(FeatureItem.AllowChangeDataplanes)).toBe(false);
       });
     });
   });

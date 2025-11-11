@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { FormattedMessage, useIntl } from "react-intl";
-import * as yup from "yup";
 
+import { encryptionMapperSchema } from "components/connection/ConnectionForm/schemas/mapperSchema";
 import { FormControlErrorMessage } from "components/forms/FormControl";
 import { Text } from "components/ui/Text";
 
@@ -10,39 +10,22 @@ import {
   EncryptionMapperAlgorithm,
   StreamMapperType,
   EncryptionMapperConfiguration,
+  MapperValidationErrorType,
 } from "core/api/types/AirbyteClient";
 
 import { autoSubmitResolver } from "./autoSubmitResolver";
 import { useMappingContext } from "./MappingContext";
-import { MappingFormTextInput, MappingRowItem } from "./MappingRow";
-import styles from "./MappingRow.module.scss";
+import { MappingFormTextInput, MappingRowContent, MappingRowItem } from "./MappingRow";
 import { MappingTypeListBox } from "./MappingTypeListBox";
+import { MappingValidationErrorMessage } from "./MappingValidationErrorMessage";
 import { SelectTargetField } from "./SelectTargetField";
 import { StreamMapperWithId } from "./types";
 
-const isHexadecimal = (value: string | undefined) => (value ? /^[0-9a-fA-F]*$/.test(value) : false);
-
-/**
- * AES is still _technically_ supported in the API but in reality, the secrets hydration is broken
- * It should not be supported in the UI
- * https://github.com/airbytehq/airbyte-internal-issues/issues/11515
- */
-const encryptionMapperSchema = yup
-  .object()
-  .shape({
-    algorithm: yup.mixed<EncryptionMapperAlgorithm>().oneOf([EncryptionMapperAlgorithm.RSA]).required(),
-    targetField: yup.string().required("Target field is required"),
-    fieldNameSuffix: yup.string().oneOf(["_encrypted"]).required("Field name suffix is required"),
-    publicKey: yup.string().when("algorithm", {
-      is: "RSA",
-      then: yup
-        .string()
-        .required("Public key is required")
-        .test("is-hex", "Public key must be in hexadecimal format", isHexadecimal),
-      otherwise: (schema) => schema.strip(),
-    }),
-  })
-  .required();
+// /**
+//  * AES is still _technically_ supported in the API but in reality, the secrets hydration is broken
+//  * It should not be supported in the UI
+//  * https://github.com/airbytehq/airbyte-internal-issues/issues/11515
+//  */
 
 interface EncryptionFormProps {
   streamDescriptorKey: string;
@@ -50,8 +33,9 @@ interface EncryptionFormProps {
 }
 
 export const EncryptionForm: React.FC<EncryptionFormProps> = ({ streamDescriptorKey, mapping }) => {
-  const { updateLocalMapping, validatingStreams } = useMappingContext();
+  const { updateLocalMapping, validatingStreams, isMappingsFeatureEnabled } = useMappingContext();
   const isStreamValidating = validatingStreams.has(streamDescriptorKey);
+  const isDisabled = isStreamValidating || !isMappingsFeatureEnabled;
   const { formatMessage } = useIntl();
   const [algorithm] = useState<EncryptionMapperAlgorithm>(
     mapping.mapperConfiguration.algorithm || EncryptionMapperAlgorithm.RSA
@@ -66,15 +50,21 @@ export const EncryptionForm: React.FC<EncryptionFormProps> = ({ streamDescriptor
         publicKey: mapping.mapperConfiguration.publicKey ?? "",
       }),
     },
-    resolver: autoSubmitResolver<EncryptionMapperConfiguration>(encryptionMapperSchema, (formValues) => {
+    resolver: autoSubmitResolver(encryptionMapperSchema, (formValues) => {
       updateLocalMapping(streamDescriptorKey, mapping.id, { mapperConfiguration: formValues });
     }),
     mode: "onBlur",
   });
 
   useEffect(() => {
-    if (mapping.validationError && mapping.validationError.type === "FIELD_NOT_FOUND") {
-      methods.setError("targetField", { message: mapping.validationError.message });
+    if (
+      mapping.validationError &&
+      mapping.validationError.type === MapperValidationErrorType.FIELD_NOT_FOUND &&
+      "targetField" in methods.formState.touchedFields
+    ) {
+      methods.setError("targetField", {
+        message: "connections.mappings.error.FIELD_NOT_FOUND",
+      });
     } else {
       methods.clearErrors("targetField");
     }
@@ -88,43 +78,44 @@ export const EncryptionForm: React.FC<EncryptionFormProps> = ({ streamDescriptor
 
   return (
     <FormProvider {...methods}>
-      <form className={styles.form}>
-        <MappingRowItem>
-          <MappingTypeListBox
-            disabled={isStreamValidating}
-            selectedValue={StreamMapperType.encryption}
-            streamDescriptorKey={streamDescriptorKey}
-            mappingId={mapping.id}
-          />
-        </MappingRowItem>
-        <MappingRowItem>
-          <SelectTargetField<EncryptionMapperConfiguration>
-            mappingId={mapping.id}
-            streamDescriptorKey={streamDescriptorKey}
-            name="targetField"
-            disabled={isStreamValidating}
-          />
-        </MappingRowItem>
-        <MappingRowItem>
-          <Text>
-            <FormattedMessage id="connections.mappings.usingRsaAndKey" />
-          </Text>
-        </MappingRowItem>
-        {values.algorithm === "RSA" && (
+      <form>
+        <MappingRowContent>
           <MappingRowItem>
-            <MappingFormTextInput
-              placeholder={formatMessage({ id: "connections.mappings.encryption.publicKey" })}
-              name="publicKey"
-              disabled={isStreamValidating}
+            <MappingTypeListBox
+              disabled={isDisabled}
+              selectedValue={StreamMapperType.encryption}
+              streamDescriptorKey={streamDescriptorKey}
+              mappingId={mapping.id}
             />
-            <FormControlErrorMessage<EncryptionMapperConfiguration> name="publicKey" />
           </MappingRowItem>
-        )}
-        {mapping.validationError && mapping.validationError.type !== "FIELD_NOT_FOUND" && (
-          <Text italicized color="red">
-            {mapping.validationError.message}
-          </Text>
-        )}
+          <MappingRowItem>
+            <SelectTargetField<EncryptionMapperConfiguration>
+              mappingId={mapping.id}
+              streamDescriptorKey={streamDescriptorKey}
+              name="targetField"
+              disabled={isDisabled}
+            />
+          </MappingRowItem>
+          <MappingRowItem>
+            <Text>
+              <FormattedMessage id="connections.mappings.usingRsaAndKey" />
+            </Text>
+          </MappingRowItem>
+          {values.algorithm === "RSA" && (
+            <MappingRowItem>
+              <MappingFormTextInput
+                placeholder={formatMessage({ id: "connections.mappings.encryption.publicKey" })}
+                name="publicKey"
+                disabled={isDisabled}
+              />
+              <FormControlErrorMessage<EncryptionMapperConfiguration> name="publicKey" />
+            </MappingRowItem>
+          )}
+        </MappingRowContent>
+        <MappingValidationErrorMessage<EncryptionMapperConfiguration>
+          validationError={mapping.validationError}
+          touchedFields={methods.formState.touchedFields}
+        />
       </form>
     </FormProvider>
   );

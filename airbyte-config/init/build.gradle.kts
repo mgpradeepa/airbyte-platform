@@ -1,6 +1,5 @@
 plugins {
   id("io.airbyte.gradle.jvm.lib")
-  id("io.airbyte.gradle.docker")
   id("io.airbyte.gradle.publish")
 }
 
@@ -8,10 +7,11 @@ dependencies {
   ksp(platform(libs.micronaut.platform))
   ksp(libs.bundles.micronaut.annotation.processor)
 
-  api(libs.bundles.micronaut.annotation)
-  api(libs.micronaut.cache.caffeine)
+  implementation(libs.bundles.micronaut.annotation)
+  implementation(libs.micronaut.cache.caffeine)
 
   implementation(project(":oss:airbyte-commons"))
+  implementation(project(":oss:airbyte-commons-micronaut"))
   implementation(project(":oss:airbyte-config:specs"))
   implementation(project(":oss:airbyte-config:config-models"))
   implementation(project(":oss:airbyte-config:config-persistence"))
@@ -23,11 +23,11 @@ dependencies {
   implementation(libs.airbyte.protocol)
   implementation(project(":oss:airbyte-json-validation"))
   implementation(libs.failsafe.okhttp)
-  implementation(libs.guava)
   implementation(libs.okhttp)
   implementation(libs.bundles.jackson)
   implementation(libs.semver4j)
   implementation(libs.kotlin.logging)
+
 
   testImplementation(project(":oss:airbyte-test-utils"))
   testRuntimeOnly(libs.junit.jupiter.engine)
@@ -37,22 +37,6 @@ dependencies {
   testImplementation(libs.mockk)
   testImplementation(libs.mockk)
   testImplementation(libs.kotlin.test.runner.junit5)
-}
-
-airbyte {
-  docker {
-    imageName = "init"
-  }
-}
-
-val copyScripts =
-  tasks.register<Copy>("copyScripts") {
-    from("scripts")
-    into("build/airbyte/docker/bin/scripts")
-  }
-
-tasks.named("dockerCopyDistribution") {
-  dependsOn(copyScripts)
 }
 
 tasks.processResources {

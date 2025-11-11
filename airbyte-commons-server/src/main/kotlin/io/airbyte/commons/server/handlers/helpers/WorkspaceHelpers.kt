@@ -4,17 +4,19 @@
 
 package io.airbyte.commons.server.handlers.helpers
 
-import io.airbyte.api.model.generated.NotificationItem
-import io.airbyte.api.model.generated.NotificationSettings
-import io.airbyte.api.model.generated.NotificationType
 import io.airbyte.api.model.generated.WorkspaceCreateWithId
-import io.airbyte.commons.enums.Enums
+import io.airbyte.api.problems.model.generated.ProblemMessageData
+import io.airbyte.api.problems.throwable.generated.NotificationMissingUrlProblem
+import io.airbyte.api.problems.throwable.generated.NotificationRequiredProblem
 import io.airbyte.commons.server.converters.NotificationConverter
 import io.airbyte.commons.server.converters.NotificationSettingsConverter
 import io.airbyte.commons.server.converters.WorkspaceWebhookConfigsConverter
-import io.airbyte.config.Geography
+import io.airbyte.config.Configs.AirbyteEdition
+import io.airbyte.config.Notification
 import io.airbyte.config.Organization
 import io.airbyte.config.StandardWorkspace
+import io.airbyte.config.helpers.patchNotificationSettingsWithDefaultValue
+import io.airbyte.data.services.DataplaneGroupService
 import java.util.Optional
 import java.util.UUID
 import java.util.function.Supplier
@@ -26,9 +28,11 @@ fun buildStandardWorkspace(
   workspaceCreateWithId: WorkspaceCreateWithId,
   organization: Organization,
   uuidSupplier: Supplier<UUID>,
+  dataplaneGroupService: DataplaneGroupService,
 ): StandardWorkspace {
-  // if not set on the workspaceCreate, set the defaultGeography to AUTO
-  val geography: Geography = workspaceCreateWithId.defaultGeography?.let { Enums.convertTo(it, Geography::class.java) } ?: Geography.AUTO
+  // if not set on the workspaceCreate, set the dataplaneGroupId to the default
+  val resolvedDataplaneGroupId =
+    workspaceCreateWithId.dataplaneGroupId ?: dataplaneGroupService.getDefaultDataplaneGroup().id
 
   return StandardWorkspace().apply {
     workspaceId = workspaceCreateWithId.id ?: uuidSupplier.get()
@@ -42,34 +46,12 @@ fun buildStandardWorkspace(
     displaySetupWizard = workspaceCreateWithId.displaySetupWizard ?: false
     tombstone = false
     notifications = NotificationConverter.toConfigList(workspaceCreateWithId.notifications)
-    notificationSettings = NotificationSettingsConverter.toConfig(patchNotificationSettingsWithDefaultValue(workspaceCreateWithId))
-    defaultGeography = geography
+    notificationSettings =
+      patchNotificationSettingsWithDefaultValue(NotificationSettingsConverter.toConfig(workspaceCreateWithId.notificationSettings))
+    dataplaneGroupId = resolvedDataplaneGroupId
     webhookOperationConfigs = WorkspaceWebhookConfigsConverter.toPersistenceWrite(workspaceCreateWithId.webhookConfigs, uuidSupplier)
     organizationId = organization.organizationId
     email = workspaceCreateWithId.email
-  }
-}
-
-private fun patchNotificationSettingsWithDefaultValue(workspaceCreateWithId: WorkspaceCreateWithId): NotificationSettings {
-  val defaultNotificationType = NotificationItem().addNotificationTypeItem(NotificationType.CUSTOMERIO)
-
-  return NotificationSettings().apply {
-    // Grab a reference to this `apply` scope's `this`, could also avoid this and reference `this@apply` in the following `with` function instead.
-    val ns = this
-
-    with(workspaceCreateWithId.notificationSettings) {
-      ns.sendOnSuccess = this?.sendOnSuccess ?: NotificationItem().notificationType(emptyList())
-      ns.sendOnFailure = this?.sendOnFailure ?: defaultNotificationType
-      ns.sendOnConnectionUpdate = this?.sendOnConnectionUpdate ?: defaultNotificationType
-
-      ns.sendOnConnectionUpdateActionRequired = this?.sendOnConnectionUpdateActionRequired ?: defaultNotificationType
-
-      ns.sendOnSyncDisabled = this?.sendOnSyncDisabled ?: defaultNotificationType
-      ns.sendOnSyncDisabledWarning = this?.sendOnSyncDisabledWarning ?: defaultNotificationType
-      ns.sendOnBreakingChangeWarning = this?.sendOnBreakingChangeWarning ?: defaultNotificationType
-
-      ns.sendOnBreakingChangeSyncsDisabled = this?.sendOnBreakingChangeSyncsDisabled ?: defaultNotificationType
-    }
   }
 }
 
@@ -91,4 +73,56 @@ fun getDefaultWorkspaceName(
   }
 
   return defaultWorkspaceName
+}
+
+fun validateWorkspace(
+  workspace: StandardWorkspace,
+  airbyteEdition: AirbyteEdition,
+) {
+  if (workspace.notificationSettings != null) {
+    val settings = workspace.notificationSettings
+    validateNotificationItem(settings.sendOnSuccess, "success")
+    validateNotificationItem(settings.sendOnFailure, "failure")
+    validateNotificationItem(settings.sendOnConnectionUpdate, "connectionUpdate")
+    validateNotificationItem(settings.sendOnConnectionUpdateActionRequired, "connectionUpdateActionRequired")
+    validateNotificationItem(settings.sendOnSyncDisabled, "syncDisabled")
+    validateNotificationItem(settings.sendOnSyncDisabledWarning, "syncDisabledWarning")
+
+    // email notifications for connectionUpdateActionRequired and syncDisabled can't be disabled.
+    // this rule only applies to Airbyte Cloud, because OSS doesn't support email notifications.
+    if (airbyteEdition == AirbyteEdition.CLOUD) {
+      if (!settings.sendOnConnectionUpdateActionRequired.hasEmail()) {
+        throw NotificationRequiredProblem(
+          ProblemMessageData().message("The 'connectionUpdateActionRequired' email notification can't be disabled"),
+        )
+      }
+      if (!settings.sendOnSyncDisabled.hasEmail()) {
+        throw NotificationRequiredProblem(
+          ProblemMessageData().message("The 'syncDisabled' email notification can't be disabled"),
+        )
+      }
+    }
+  }
+}
+
+private fun io.airbyte.config.NotificationItem?.hasEmail(): Boolean {
+  if (this == null) return false
+  return this.notificationType.contains(Notification.NotificationType.CUSTOMERIO)
+}
+
+private fun validateNotificationItem(
+  item: io.airbyte.config.NotificationItem?,
+  notificationName: String,
+) {
+  if (item == null) {
+    return
+  }
+
+  if (item.notificationType != null && item.notificationType.contains(Notification.NotificationType.SLACK)) {
+    if (item.slackConfiguration == null || item.slackConfiguration.webhook.isNullOrBlank()) {
+      throw NotificationMissingUrlProblem(
+        ProblemMessageData().message("The '$notificationName' notification is enabled but is missing a URL."),
+      )
+    }
+  }
 }

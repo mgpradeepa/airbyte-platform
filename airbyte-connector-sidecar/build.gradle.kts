@@ -39,12 +39,15 @@ dependencies {
 
   implementation(platform(libs.micronaut.platform))
   implementation(libs.bundles.micronaut.light)
+  implementation(libs.bundles.micronaut.kotlin)  // Explicitly needed for getBean extension (was leaked through api() before)
   implementation(libs.google.cloud.storage)
   implementation(libs.java.jwt)
   implementation(libs.kotlin.logging)
   implementation(libs.micronaut.jackson.databind)
   implementation(libs.slf4j.api)
   implementation(libs.bundles.micronaut.metrics)
+  implementation(libs.micronaut.http.client)
+  implementation(libs.retrofit)
 
   implementation(project(":oss:airbyte-api:server-api"))
   implementation(project(":oss:airbyte-api:workload-api"))
@@ -75,6 +78,7 @@ dependencies {
   testImplementation(libs.bundles.junit)
   testImplementation(libs.assertj.core)
   testImplementation(libs.airbyte.protocol)
+  testImplementation(libs.retrofit.mock)
 
   airbyteProtocol(libs.airbyte.protocol) {
     isTransitive = false
