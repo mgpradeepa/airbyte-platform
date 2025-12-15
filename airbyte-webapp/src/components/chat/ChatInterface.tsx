@@ -1,4 +1,11 @@
 import React from "react";
+import { FormattedMessage } from "react-intl";
+
+import { Badge } from "components/ui/Badge";
+import { FlexContainer } from "components/ui/Flex";
+import { Heading } from "components/ui/Heading";
+import { Icon } from "components/ui/Icon";
+import { Text } from "components/ui/Text";
 
 import { ChatInput } from "./ChatInput";
 import styles from "./ChatInterface.module.scss";
@@ -19,6 +26,8 @@ export interface ChatInterfaceProps {
   isMultiline?: boolean;
   toolComponents?: Record<string, React.ComponentType<ToolCallProps>>;
   showAllToolCalls?: boolean;
+  isVisible?: boolean;
+  onDismissSecret?: () => void;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
@@ -34,9 +43,25 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   isMultiline = false,
   toolComponents,
   showAllToolCalls = false,
+  isVisible = true,
+  onDismissSecret,
 }) => {
   return (
     <div className={styles.container}>
+      <div className={styles.header}>
+        <FlexContainer direction="row" alignItems="center" gap="sm">
+          <Icon type="aiStars" color="magic" size="md" />
+          <Heading as="h3" size="sm" className={styles.headerTitle}>
+            <FormattedMessage id="connectorSetup.agent.title" />
+          </Heading>
+          <Badge variant="blue">
+            <FormattedMessage id="ui.badge.beta" />
+          </Badge>
+        </FlexContainer>
+        <Text size="sm" color="grey" className={styles.headerDescription}>
+          <FormattedMessage id="connectorSetup.agent.description" />
+        </Text>
+      </div>
       <div className={styles.chatContainer}>
         <MessageList
           messages={messages}
@@ -44,6 +69,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           error={error}
           toolComponents={toolComponents}
           showAllToolCalls={showAllToolCalls}
+          isVisible={isVisible}
         />
         <ChatInput
           onSendMessage={onSendMessage}
@@ -54,6 +80,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           secretFieldPath={secretFieldPath}
           secretFieldName={secretFieldName}
           isMultiline={isMultiline}
+          isVisible={isVisible}
+          onDismissSecret={onDismissSecret}
         />
       </div>
     </div>

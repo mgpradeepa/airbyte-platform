@@ -5,7 +5,6 @@
 package io.airbyte.server.services
 
 import io.airbyte.commons.annotation.InternalForTesting
-import io.airbyte.commons.json.Jsons
 import io.airbyte.metrics.lib.MetricTags
 import io.airbyte.statistics.OutlierEvaluation
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -97,14 +96,23 @@ class JobObservabilityReportingService(
 
   private fun OutlierEvaluation.addToContextMap(map: MutableMap<String, Any>) {
     map["_score_$name"] =
-      Jsons.serialize(
-        mapOf(
-          "value" to value,
-          "threshold" to threshold,
-          "is_outlier" to isOutlier,
-          "scores" to scores.toString(),
-        ),
-      )
+      buildMap {
+        put("value", value)
+        put("threshold", threshold)
+        put("is_outlier", isOutlier)
+        skipped?.let { put("skipped", it) }
+        scores?.let {
+          put(
+            "scores",
+            mapOf(
+              "current" to it.current,
+              "mean" to it.mean,
+              "std" to it.std,
+              "zScore" to it.zScore,
+            ),
+          )
+        }
+      }
   }
 
   private fun buildJobInfo(job: JobInfo): Map<String, Any> {

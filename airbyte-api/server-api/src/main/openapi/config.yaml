@@ -6698,6 +6698,10 @@ paths:
                   type: string
                   format: uuid
                   description: Optional connection ID for additional workspace validation and breaking change detection based on configured streams
+                persist_changes:
+                  type: boolean
+                  default: false
+                  description: If true, persist the catalog changes to the connection (requires connection_id and WORKSPACE_EDITOR role). Updates breakingChange flag and status (set to INACTIVE if breaking change detected or if nonBreakingChangesPreference is DISABLE and there are any changes). Does not update sourceCatalogId or syncCatalog.
       responses:
         "200":
           description: Successful operation
@@ -11082,6 +11086,50 @@ paths:
         - domain_verifications
       summary: List all domain verifications for an organization
       operationId: listDomainVerifications
+
+  /v1/domain_verifications/delete:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainVerificationIdRequestBody"
+      responses:
+        "204":
+          description: "Domain verification successfully deleted"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+      summary: Delete a domain verification
+      tags:
+        - domain_verifications
+      operationId: deleteDomainVerification
+
+  /v1/domain_verifications/reset:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainVerificationIdRequestBody"
+      responses:
+        "200":
+          description: "Domain verification reset successfully"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainVerificationResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+      summary: Reset a failed or expired domain verification
+      tags:
+        - domain_verifications
+      operationId: resetDomainVerification
 
 components:
   securitySchemes:
@@ -22767,7 +22815,6 @@ components:
       type: object
       required:
         - organizationId
-        - emailDomain
       properties:
         organizationId:
           type: string

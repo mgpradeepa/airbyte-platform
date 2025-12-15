@@ -16,13 +16,13 @@ export interface Experiments {
   "connection.onboarding.destinations": string;
   "connection.onboarding.sources": string;
   "connection.rateLimitedUI": boolean;
+  "connection.unifiedChangesReview": boolean;
   "connections.connectionsStatusesEnabled": boolean;
   "connector.agentAssistedSetup": boolean;
   "connector.airbyteCloudIpAddressesByDataplane": Record<string, string[]>;
   "connector.allowSavingWithoutTesting": boolean;
-  "connector.suggestedDestinationConnectors": string;
   "connector.suggestedSourceConnectors": string;
-  "connector.updatedSetupUx": boolean;
+  "connector.suggestedDestinationConnectors": string;
   "connectorBuilder.aiAssist.enabled": boolean;
   "connectorBuilder.customComponents": boolean;
   "connectorBuilder.contributeEditsToMarketplace": boolean;
@@ -38,12 +38,13 @@ export interface Experiments {
   "platform.allow-config-template-endpoints": boolean;
   "platform.llm-sync-job-failure-explanation": boolean;
   "platform.use-runtime-secret-persistence": boolean;
+  "platform.use-verified-domains-for-sso-activate": boolean;
   productLimitsUI: boolean;
   "settings.breakingChangeNotifications": boolean;
+  "settings.domainVerification": boolean;
   "settings.downloadDiagnostics": boolean;
   "settings.showAdvancedSettings": boolean;
   "settings.ssoConfigValidation": boolean;
-  "sidebar.showOrgPickerV2": boolean;
 }
 
 export const defaultExperimentValues: Experiments = {
@@ -56,6 +57,7 @@ export const defaultExperimentValues: Experiments = {
   "connection.onboarding.destinations": "",
   "connection.onboarding.sources": "",
   "connection.rateLimitedUI": false,
+  "connection.unifiedChangesReview": false,
   "connections.connectionsStatusesEnabled": false,
   "connector.agentAssistedSetup": false,
   "connector.airbyteCloudIpAddressesByDataplane": {
@@ -77,7 +79,6 @@ export const defaultExperimentValues: Experiments = {
   "connector.allowSavingWithoutTesting": false,
   "connector.suggestedDestinationConnectors": "",
   "connector.suggestedSourceConnectors": "",
-  "connector.updatedSetupUx": false,
   "connectorBuilder.aiAssist.enabled": false,
   "connectorBuilder.contributeEditsToMarketplace": true,
   "connectorBuilder.customComponents": false,
@@ -93,10 +94,11 @@ export const defaultExperimentValues: Experiments = {
   "platform.allow-config-template-endpoints": false,
   "platform.llm-sync-job-failure-explanation": false,
   "platform.use-runtime-secret-persistence": false,
+  "platform.use-verified-domains-for-sso-activate": false,
   productLimitsUI: false,
   "settings.breakingChangeNotifications": false,
+  "settings.domainVerification": false,
   "settings.downloadDiagnostics": false,
   "settings.showAdvancedSettings": false,
   "settings.ssoConfigValidation": false,
-  "sidebar.showOrgPickerV2": true,
 };

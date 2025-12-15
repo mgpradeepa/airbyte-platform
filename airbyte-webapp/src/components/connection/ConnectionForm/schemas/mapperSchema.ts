@@ -4,6 +4,7 @@ import {
   StreamMapperType,
   HashingMapperConfigurationMethod,
   FieldRenamingMapperConfiguration,
+  FieldFilteringMapperConfiguration,
   HashingMapperConfiguration,
   RowFilteringMapperConfiguration,
   EncryptionMapperAESConfigurationMode,
@@ -16,10 +17,16 @@ import {
 import { ToZodSchema } from "core/utils/zod";
 
 /**
- * Hashing
+ * Hashing mapper configuration schema
+ *
+ * Validates hashing mapper configurations for both regular and data activation connections.
+ *
+ * fieldNameSuffix: Appended to the field name after hashing (e.g., "_hashed" → "email_hashed")
+ *   - Regular connections: typically use non-empty suffix like "_hashed"
+ *   - Data activation connections: use empty string "" to allow mapper chaining on same field
  */
 export const hashingMapperConfiguration = z.object({
-  fieldNameSuffix: z.string().nonempty("form.empty.error"),
+  fieldNameSuffix: z.string(),
   method: z.nativeEnum(HashingMapperConfigurationMethod),
   targetField: z.string().nonempty("form.empty.error"),
 } satisfies ToZodSchema<HashingMapperConfiguration>);
@@ -40,6 +47,18 @@ export const fieldRenamingMapperConfiguration = z.object({
 const fieldRenamingMapperConfigurationSchema = z.object({
   type: z.literal(StreamMapperType["field-renaming"]),
   mapperConfiguration: fieldRenamingMapperConfiguration,
+});
+
+/**
+ * Field filtering
+ */
+export const fieldFilteringMapperConfiguration = z.object({
+  targetField: z.string().nonempty("form.empty.error"),
+} satisfies ToZodSchema<FieldFilteringMapperConfiguration>);
+
+const fieldFilteringMapperConfigurationSchema = z.object({
+  type: z.literal(StreamMapperType["field-filtering"]),
+  mapperConfiguration: fieldFilteringMapperConfiguration,
 });
 
 /**
@@ -107,6 +126,7 @@ const encryptionMapperConfigurationSchema = z.object({
 const mapperConfigurationSchema = z.discriminatedUnion("type", [
   hashingMapperConfigurationSchema,
   fieldRenamingMapperConfigurationSchema,
+  fieldFilteringMapperConfigurationSchema,
   rowFilteringMapperConfigurationSchema,
   encryptionMapperConfigurationSchema,
 ]);

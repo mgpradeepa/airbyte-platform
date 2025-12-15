@@ -12,13 +12,13 @@ import io.airbyte.config.AuthenticatedUser
 import io.airbyte.data.services.impls.data.ApplicationServiceMicronautImpl
 import io.airbyte.micronaut.runtime.AirbyteAuthConfig
 import io.micronaut.security.token.jwt.generator.JwtTokenGenerator
+import io.mockk.every
+import io.mockk.mockk
 import jakarta.ws.rs.BadRequestException
-import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.ArgumentMatchers
-import org.mockito.Mockito
-import org.mockito.Mockito.mock
+import org.junit.jupiter.api.assertThrows
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.Optional
@@ -44,9 +44,9 @@ internal class ApplicationServiceMicronautImplTests {
         password = "test-password",
         username = "test",
       )
-    tokenGenerator = mock<JwtTokenGenerator>()
+    tokenGenerator = mockk<JwtTokenGenerator>()
     airbyteAuthConfig = AirbyteAuthConfig(instanceAdmin = instanceAdminConfig, tokenIssuer = issuer)
-    Mockito.`when`(tokenGenerator!!.generateToken(ArgumentMatchers.anyMap())).thenReturn(Optional.of(token!!))
+    every { tokenGenerator!!.generateToken(any()) } returns Optional.of(token!!)
   }
 
   @Test
@@ -79,9 +79,9 @@ internal class ApplicationServiceMicronautImplTests {
     val token = applicationServer.getToken("test-client-id", "test-client-secret")
     val claims = getTokenClaims(token)
 
-    Assertions.assertEquals(expectedRoles, getRolesFromNode((claims.get("roles") as com.fasterxml.jackson.databind.node.ArrayNode?)!!))
-    Assertions.assertEquals("airbyte-server", claims.get("iss").asText())
-    Assertions.assertEquals(ApplicationServiceMicronautImpl.Companion.DEFAULT_AUTH_USER_ID.toString(), claims.get("sub").asText())
+    assertEquals(expectedRoles, getRolesFromNode((claims.get("roles") as ArrayNode?)!!))
+    assertEquals("airbyte-server", claims.get("iss").asText())
+    assertEquals(ApplicationServiceMicronautImpl.Companion.DEFAULT_AUTH_USER_ID.toString(), claims.get("sub").asText())
   }
 
   @Test
@@ -92,9 +92,9 @@ internal class ApplicationServiceMicronautImplTests {
         tokenGenerator!!,
       )
 
-    Assertions.assertThrows<BadRequestException?>(
-      BadRequestException::class.java,
-    ) { applicationServer.getToken("test-client-id", "wrong-secret") }
+    assertThrows<BadRequestException> {
+      applicationServer.getToken("test-client-id", "wrong-secret")
+    }
   }
 
   @Test
@@ -106,7 +106,7 @@ internal class ApplicationServiceMicronautImplTests {
       )
 
     val applications = applicationServer.listApplicationsByUser(AuthenticatedUser().withName("Test User"))
-    Assertions.assertEquals(1, applications.size)
+    assertEquals(1, applications.size)
   }
 
   @Test
@@ -117,9 +117,9 @@ internal class ApplicationServiceMicronautImplTests {
         tokenGenerator!!,
       )
 
-    Assertions.assertThrows<UnsupportedOperationException?>(
-      UnsupportedOperationException::class.java,
-    ) { applicationServer.createApplication(AuthenticatedUser(), "Test Application") }
+    assertThrows<UnsupportedOperationException> {
+      applicationServer.createApplication(AuthenticatedUser(), "Test Application")
+    }
   }
 
   @Test
@@ -130,9 +130,9 @@ internal class ApplicationServiceMicronautImplTests {
         tokenGenerator!!,
       )
 
-    Assertions.assertThrows<UnsupportedOperationException?>(
-      UnsupportedOperationException::class.java,
-    ) { applicationServer.deleteApplication(AuthenticatedUser(), "Test Application") }
+    assertThrows<UnsupportedOperationException> {
+      applicationServer.deleteApplication(AuthenticatedUser(), "Test Application")
+    }
   }
 
   private fun getTokenClaims(token: String): JsonNode {
@@ -145,7 +145,7 @@ internal class ApplicationServiceMicronautImplTests {
   }
 
   private fun getRolesFromNode(claimsNode: ArrayNode): MutableSet<String?> {
-    val roles: MutableSet<String?> = HashSet<String?>()
+    val roles: MutableSet<String?> = HashSet()
     for (role in claimsNode) {
       roles.add(role.asText())
     }

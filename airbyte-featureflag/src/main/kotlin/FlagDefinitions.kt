@@ -29,6 +29,13 @@ object HeartbeatMaxSecondsBetweenMessages : Permanent<String>(key = "heartbeat-m
 
 object ShouldFailSyncIfHeartbeatFailure : Permanent<Boolean>(key = "heartbeat.failSync", default = false)
 
+/**
+ * When enabled, emits diagnostic logs for heartbeat monitoring to help debug heartbeat timeout issues.
+ * This includes logging of heartbeat counts, message progress, and timing information.
+ * Default is false to avoid noisy logs in production.
+ */
+object HeartbeatDiagnosticLogsEnabled : Temporary<Boolean>(key = "heartbeat.diagnostic-logs-enabled", default = false)
+
 object DestinationTimeoutEnabled : Permanent<Boolean>(key = "destination-timeout-enabled", default = true)
 
 object ShouldFailSyncOnDestinationTimeout : Permanent<Boolean>(key = "destination-timeout.failSync", default = true)
@@ -252,3 +259,5 @@ object SkipStiggPlanLookup : Temporary<Boolean>(key = "platform.skip-stigg-plan-
 object BypassStiggEntitlementChecks : Permanent<Boolean>(key = "platform.bypass-stigg-entitlement-checks", default = false)
 
 object EnableDataWorkerUsage : Temporary<Boolean>(key = "platform.enable-data-worker-usage", default = false)
+
+object UseVerifiedDomainsForSsoActivate : Temporary<Boolean>(key = "platform.use-verified-domains-for-sso-activate", default = false)

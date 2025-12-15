@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useIntl } from "react-intl";
+import { FormattedMessage, useIntl } from "react-intl";
 import { useToggle } from "react-use";
 
 import { Message } from "components/ui/Message";
@@ -16,6 +16,8 @@ interface ChatInputProps {
   secretFieldPath?: string[];
   secretFieldName?: string;
   isMultiline?: boolean;
+  isVisible?: boolean;
+  onDismissSecret?: () => void;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -27,9 +29,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   secretFieldPath = [],
   secretFieldName,
   isMultiline = false,
+  isVisible = true,
+  onDismissSecret,
 }) => {
   const [message, setMessage] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { formatMessage } = useIntl();
   const [isSecretVisible, toggleSecretVisibility] = useToggle(false);
 
@@ -42,10 +47,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  const handleDismissSecret = () => {
+    setMessage("");
+    onDismissSecret?.();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
+    }
+    if (e.key === "Escape" && isSecretMode) {
+      e.preventDefault();
+      handleDismissSecret();
     }
   };
 
@@ -60,6 +74,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   useEffect(() => {
     resizeTextarea();
   }, [message]);
+
+  // Auto-focus input when streaming stops or when component becomes visible
+  useEffect(() => {
+    if (!isStreaming && isVisible) {
+      if (isSecretMode && !isMultiline) {
+        inputRef.current?.focus();
+      } else if (!isSecretMode || isSecretVisible) {
+        textareaRef.current?.focus();
+      }
+    }
+  }, [isStreaming, isSecretMode, isMultiline, isSecretVisible, isVisible]);
 
   const placeholder = isSecretMode
     ? formatMessage(
@@ -102,6 +127,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </button>
           ) : isSecretMode && !isMultiline ? (
             <input
+              ref={inputRef}
               type={isSecretVisible ? "text" : "password"}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -115,6 +141,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               data-bwignore="true"
               data-form-type="other"
               name="secret-input-field"
+              data-testid="chat-input"
             />
           ) : (
             <textarea
@@ -132,6 +159,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               data-bwignore={isSecretMode ? "true" : undefined}
               data-form-type={isSecretMode ? "other" : undefined}
               name={isSecretMode ? "secret-input-field" : undefined}
+              data-testid="chat-input"
             />
           )}
           {isSecretMode && !isMultiline && (
@@ -152,6 +180,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               disabled={disabled}
             >
               <Icon type="eyeSlash" size="sm" />
+            </button>
+          )}
+          {isSecretMode && onDismissSecret && (
+            <button
+              type="button"
+              onClick={handleDismissSecret}
+              className={styles.cancelButton}
+              disabled={disabled}
+              aria-label={formatMessage({ id: "form.cancel" })}
+            >
+              <FormattedMessage id="form.cancel" />
             </button>
           )}
           {isStreaming ? (
