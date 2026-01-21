@@ -6,12 +6,13 @@
 export enum FeatureItem {
   AICopilot = "AI_COPILOT",
   AllowAllRBACRoles = "ALLOW_ALL_RBAC_ROLES", // corresponds to the feature-rbac-roles entitlement
+  AllowDataWorkerCapacity = "ALLOW_DATA_WORKER_CAPACITY", // corresponds to the feature-data-worker-capacity entitlement
   AllowAutoDetectSchema = "ALLOW_AUTO_DETECT_SCHEMA",
   AllowSyncFrequencyUnderOneHour = "ALLOW_SYNC_FREQUENCY_UNDER_ONE_HOUR", // corresponds to the feature-faster-sync-frequency entitlement
   AllowUploadCustomImage = "ALLOW_UPLOAD_CUSTOM_IMAGE",
   AllowUpdateSSOConfig = "ALLOW_UPDATE_SSO_CONFIG", // corresponds to the feature-sso entitlement
   AllowUpdateConnectors = "ALLOW_UPDATE_CONNECTORS",
-  AllowChangeDataplanes = "ALLOW_CHANGE_DATAPLANES",
+  AllowChangeDataplanes = "ALLOW_CHANGE_DATAPLANES", // corresponds to the feature-self-managed-regions entitlement
   AllowDBTCloudIntegration = "ALLOW_DBT_CLOUD_INTEGRATION",
   CloudForTeamsBranding = "CLOUD_FOR_TEAMS_BRANDING",
   CloudForTeamsUpsell = "CLOUD_FOR_TEAMS_UPSELLING",
@@ -35,6 +36,7 @@ export enum FeatureItem {
   ShowAdminWarningInWorkspace = "SHOW_ADMIN_WARNING_IN_WORKSPACE",
   ShowInviteUsersHint = "SHOW_INVITE_USERS_HINT",
   ShowWorkspacePicker = "SHOW_WORKSPACE_PICKER",
+  SupportAgentBot = "SUPPORT_AGENT_BOT",
 }
 
 export type FeatureSet = Partial<Record<FeatureItem, boolean>>;

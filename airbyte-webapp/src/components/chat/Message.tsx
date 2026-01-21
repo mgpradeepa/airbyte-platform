@@ -3,6 +3,7 @@ import { FormattedMessage } from "react-intl";
 
 import styles from "./Message.module.scss";
 import { SafeMarkdown } from "./SafeMarkdown";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 import { ToolCallItem, type ToolCallProps } from "./ToolCallItem";
 
 export interface ToolCall {
@@ -33,9 +34,15 @@ interface MessageProps {
   message: ChatMessage;
   toolComponents?: Record<string, React.ComponentType<ToolCallProps>>;
   showAllToolCalls?: boolean;
+  showThinkingIndicator?: boolean;
 }
 
-export const Message: React.FC<MessageProps> = ({ message, toolComponents, showAllToolCalls = false }) => {
+export const Message: React.FC<MessageProps> = ({
+  message,
+  toolComponents,
+  showAllToolCalls = false,
+  showThinkingIndicator = false,
+}) => {
   const { content, role, isStreaming, toolCall, toolResponse } = message;
 
   // Hide messages with the hidden prefix
@@ -70,7 +77,8 @@ export const Message: React.FC<MessageProps> = ({ message, toolComponents, showA
     );
   }
 
-  if (content === "") {
+  // Only hide empty messages if they're not streaming with an indicator
+  if (content === "" && !(isStreaming && showThinkingIndicator)) {
     return null;
   }
 
@@ -83,8 +91,14 @@ export const Message: React.FC<MessageProps> = ({ message, toolComponents, showA
           </span>
         </div>
         <div className={styles.messageText}>
-          <SafeMarkdown content={content} />
-          {isStreaming ? <span className={styles.cursor} /> : null}
+          {isStreaming && !content && showThinkingIndicator ? (
+            <ThinkingIndicator />
+          ) : (
+            <>
+              <SafeMarkdown content={content} />
+              {isStreaming && <span className={styles.cursor} />}
+            </>
+          )}
         </div>
       </div>
     </div>

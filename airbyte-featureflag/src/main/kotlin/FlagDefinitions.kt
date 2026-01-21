@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2026 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.featureflag
@@ -261,3 +261,5 @@ object BypassStiggEntitlementChecks : Permanent<Boolean>(key = "platform.bypass-
 object EnableDataWorkerUsage : Temporary<Boolean>(key = "platform.enable-data-worker-usage", default = false)
 
 object UseVerifiedDomainsForSsoActivate : Temporary<Boolean>(key = "platform.use-verified-domains-for-sso-activate", default = false)
+
+object UseOptimizedStreamStatusQuery : Temporary<Boolean>(key = "platform.use-optimized-stream-status-query", default = false)

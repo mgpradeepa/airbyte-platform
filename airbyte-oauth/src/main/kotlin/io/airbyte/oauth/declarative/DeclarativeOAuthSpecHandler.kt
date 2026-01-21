@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2026 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.oauth.declarative
@@ -530,6 +530,8 @@ class DeclarativeOAuthSpecHandler {
       val interpolator = Jinjava()
       // register the `codeChallengeS256` filter
       interpolator.globalContext.registerFilter(CodeChallengeS256Filter())
+      // register the `b64encode` filter for Basic auth headers
+      interpolator.globalContext.registerFilter(Base64EncodeFilter())
 
       return interpolator
     }

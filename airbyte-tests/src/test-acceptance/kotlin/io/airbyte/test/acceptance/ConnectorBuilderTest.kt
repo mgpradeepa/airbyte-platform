@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2026 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.test.acceptance
@@ -117,7 +117,7 @@ class ConnectorBuilderTest {
    *
    * Data sent: {"records":[{"id":1},{"id":2},{"id":3}]}
    */
-  private fun getEchoServerUrl(): String = "https://httpbin.org"
+  private fun getEchoServerUrl(): String = System.getenv("ACCEPTANCE_ECHO_SERVER_URL") ?: "https://httpbin.org"
 }
 
 private val spec =

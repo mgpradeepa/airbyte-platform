@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2026 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.metrics
@@ -124,6 +124,10 @@ enum class OssMetricsRegistry(
   KEYCLOAK_TOKEN_VALIDATION(
     metricName = "keycloak_token_validation",
     metricDescription = "increments when a keycloak auth token validation occurs",
+  ),
+  KEYCLOAK_TOKEN_INVALID_REALM(
+    metricName = "keycloak_token_invalid_realm",
+    metricDescription = "increments when a keycloak auth token validation fails because of an invalid realm",
   ),
   OIDC_TOKEN_VALIDATION(
     metricName = "oidc_token_validation",

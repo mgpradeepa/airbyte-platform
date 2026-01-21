@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2026 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.data.helpers
@@ -33,7 +33,7 @@ import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.featureflag.UseBreakingChangeScopes
 import io.airbyte.featureflag.Workspace
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.micronaut.http.annotation.Trace
+import io.opentelemetry.instrumentation.annotations.WithSpan
 import jakarta.inject.Singleton
 import java.io.IOException
 import java.util.UUID
@@ -175,7 +175,7 @@ class ActorDefinitionVersionUpdater(
     processBreakingChangePinRollbacks(actorDefinitionId, newDefaultVersion, breakingChangesForDefinition)
   }
 
-  @Trace
+  @WithSpan
   @InternalForTesting
   fun getConfigScopeMaps(actorDefinitionId: UUID): Collection<ConfigScopeMapWithId> {
     val actorScopes = actorDefinitionService.getActorIdsForDefinition(actorDefinitionId)

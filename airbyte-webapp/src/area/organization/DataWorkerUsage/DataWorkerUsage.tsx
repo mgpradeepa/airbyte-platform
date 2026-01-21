@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 
 import { PageContainer } from "components/PageContainer";
@@ -11,33 +11,90 @@ import { ListBox } from "components/ui/ListBox";
 import { LoadingSpinner } from "components/ui/LoadingSpinner";
 import { Text } from "components/ui/Text";
 
-import { useListDataplaneGroups } from "core/api";
+import { useListDataplaneGroups, useOrganizationWorkerUsage } from "core/api";
 
 import styles from "./DataWorkerUsage.module.scss";
 import { UsageByWorkspaceGraph } from "./UsageByWorkspaceGraph";
+import { findFirstRegionWithUsage, getRegionOptions, sortByNameAlphabetically } from "./utils";
 
+// Data retention period agreed at PAT session
+// Backend retains data worker usage data for 90 days
+const DATA_RETENTION_DAYS = 90;
+const DATE_FORMAT = "YYYY-MM-DD";
 const NOW = new Date();
+const MIN_DATE = dayjs(NOW).subtract(DATA_RETENTION_DAYS, "day").startOf("day").format(DATE_FORMAT);
 
 export const DataWorkerUsage: React.FC = () => {
   // RangeDatePicker fires onChange even if only one date is selected. We store that state here, and when both dates
   // have been selected, they get stored in selectedDateRange, which is what we use to fetch data.
   const [tempDateRange, setTempDateRange] = useState<[string, string]>([
-    dayjs(NOW).subtract(30, "day").startOf("day").format("YYYY-MM-DD"),
-    dayjs(NOW).endOf("day").format("YYYY-MM-DD"),
+    dayjs(NOW).subtract(7, "day").startOf("day").format(DATE_FORMAT),
+    dayjs(NOW).endOf("day").format(DATE_FORMAT),
   ]);
   const [selectedDateRange, setSelectedDateRange] = useState<[string, string]>([
-    dayjs(NOW).subtract(30, "day").startOf("day").format("YYYY-MM-DD"),
-    dayjs(NOW).endOf("day").format("YYYY-MM-DD"),
+    dayjs(NOW).subtract(7, "day").startOf("day").format(DATE_FORMAT),
+    dayjs(NOW).endOf("day").format(DATE_FORMAT),
   ]);
   const regions = useListDataplaneGroups();
-  const [selectedRegion, setSelectedRegion] = useState<string | null>(() => regions[0]?.dataplane_group_id ?? null);
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState<string | null>(null);
   const { formatMessage } = useIntl();
 
-  const regionOptions = useMemo(() => {
-    return regions
-      .map((region) => ({ label: region.name, value: region.dataplane_group_id }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [regions]);
+  const allUsage = useOrganizationWorkerUsage({
+    startDate: selectedDateRange[0],
+    endDate: selectedDateRange[1],
+  });
+
+  // Sort regions alphabetically for consistent ordering
+  const sortedRegions = useMemo(() => [...regions].sort(sortByNameAlphabetically), [regions]);
+
+  const regionOptions = useMemo(() => getRegionOptions(sortedRegions), [sortedRegions]);
+
+  // Auto-select first region with usage data on mount
+  useEffect(() => {
+    // Only auto-select if no region is currently selected
+    if (selectedRegion !== null || !sortedRegions.length) {
+      return;
+    }
+
+    const regionWithUsage = findFirstRegionWithUsage(sortedRegions, allUsage);
+    const bestRegionId = regionWithUsage?.dataplane_group_id ?? sortedRegions[0]?.dataplane_group_id ?? null;
+
+    if (bestRegionId) {
+      setSelectedRegion(bestRegionId);
+    }
+  }, [sortedRegions, allUsage, selectedRegion]);
+
+  const computedMaxDate = useMemo(() => {
+    if (!startDate) {
+      // No start date selected yet - allow selecting any date up to today
+      return dayjs(NOW).endOf("day").format(DATE_FORMAT);
+    }
+
+    const maxRangeDate = dayjs(startDate).add(30, "day");
+    const today = dayjs(NOW);
+
+    // MaxDate is the EARLIER of: (startDate + 30) or today
+    // This ensures we never exceed today AND never exceed 30-day range
+    return maxRangeDate.isBefore(today) ? maxRangeDate.format(DATE_FORMAT) : today.format(DATE_FORMAT);
+  }, [startDate]);
+
+  const handleDateChange = (dates: [string, string]) => {
+    setTempDateRange([dates[0], dates[1]]);
+    if (dates[0] !== "") {
+      setStartDate(dates[0]);
+    } else {
+      setStartDate(null);
+    }
+  };
+
+  const handleDatePickerClose = () => {
+    if (tempDateRange[0] !== "" && tempDateRange[1] !== "") {
+      setSelectedDateRange([tempDateRange[0], tempDateRange[1]]);
+    } else {
+      setTempDateRange(selectedDateRange);
+    }
+  };
 
   return (
     <Box mt="xl">
@@ -54,16 +111,11 @@ export const DataWorkerUsage: React.FC = () => {
             </FlexItem>
             <FlexItem>
               <RangeDatePicker
-                maxDate={new Date().toString()}
+                minDate={MIN_DATE}
+                maxDate={computedMaxDate}
                 value={tempDateRange}
-                onChange={(dates) => setTempDateRange([dates[0], dates[1]])}
-                onClose={() => {
-                  if (tempDateRange[0] !== "" && tempDateRange[1] !== "") {
-                    setSelectedDateRange([tempDateRange[0], tempDateRange[1]]);
-                  } else {
-                    setTempDateRange(selectedDateRange);
-                  }
-                }}
+                onChange={handleDateChange}
+                onClose={handleDatePickerClose}
               />
             </FlexItem>
           </FlexContainer>

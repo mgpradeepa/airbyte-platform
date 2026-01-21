@@ -140,9 +140,11 @@ const messageReducer = (state: ChatMessage[], action: MessageAction): ChatMessag
 
 export interface UseChatMessagesParams {
   endpoint: string;
+  prompt?: string;
   agentParams?: Record<string, unknown>;
   clientTools?: ClientTools;
   onThreadIdChange?: (threadId: string) => void;
+  skipInitialRequest?: boolean;
 }
 
 /**
@@ -163,7 +165,14 @@ const buildStreamHandlers = (handlers: AgentStreamHandlers, onThreadIdReceived: 
 });
 
 export const useChatMessages = (params: UseChatMessagesParams): UseChatMessagesReturn => {
-  const { endpoint, agentParams = {}, clientTools = {}, onThreadIdChange } = params;
+  const {
+    endpoint,
+    prompt = "",
+    agentParams = {},
+    clientTools = {},
+    onThreadIdChange,
+    skipInitialRequest = false,
+  } = params;
   const [messages, dispatch] = useReducer(messageReducer, []);
   const [error, setError] = useState<string | null>(null);
   const [pendingDeferredTools, setPendingDeferredTools] = useState<Set<string>>(new Set());
@@ -407,6 +416,11 @@ export const useChatMessages = (params: UseChatMessagesParams): UseChatMessagesR
   // Send initial request with agentParams when component mounts
   const hasInitializedRef = useRef(false);
   useEffect(() => {
+    // Skip if explicitly requested
+    if (skipInitialRequest) {
+      return;
+    }
+
     if (agentParams && Object.keys(agentParams).length > 0 && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
 
@@ -422,7 +436,7 @@ export const useChatMessages = (params: UseChatMessagesParams): UseChatMessagesR
       dispatch({ type: "ADD_ASSISTANT_MESSAGE", message: assistantMessage });
       streamingMessageIdRef.current = assistantMessageId;
 
-      sendPrompt("", {
+      sendPrompt(prompt, {
         onAssistantDelta: (chunk) => {
           const activeMessageId = streamingMessageIdRef.current ?? assistantMessageId;
           updateStreamingMessage(activeMessageId, chunk);
@@ -439,7 +453,9 @@ export const useChatMessages = (params: UseChatMessagesParams): UseChatMessagesR
       });
     }
   }, [
+    skipInitialRequest,
     agentParams,
+    prompt,
     handleDeferredTool,
     sendPrompt,
     updateStreamingMessage,

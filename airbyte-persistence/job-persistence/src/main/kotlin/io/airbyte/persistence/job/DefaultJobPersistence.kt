@@ -1,11 +1,10 @@
 /*
- * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2026 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.persistence.job
 
 import com.fasterxml.jackson.core.type.TypeReference
-import datadog.trace.api.Trace
 import io.airbyte.commons.annotation.InternalForTesting
 import io.airbyte.commons.enums.toEnum
 import io.airbyte.commons.json.Jsons
@@ -37,6 +36,7 @@ import io.airbyte.metrics.lib.ApmTraceUtils.addTagsToTrace
 import io.airbyte.persistence.job.JobPersistence.JobAttemptPair
 import io.airbyte.protocol.models.v0.StreamDescriptor
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.opentelemetry.instrumentation.annotations.WithSpan
 import org.jooq.DSLContext
 import org.jooq.Field
 import org.jooq.JSONB
@@ -323,7 +323,7 @@ class DefaultJobPersistence
           .update(Tables.ATTEMPTS)
           .set(
             Tables.ATTEMPTS.OUTPUT,
-            JSONB.valueOf(Jsons.serialize(output)),
+            JSONB.valueOf(removeUnsupportedUnicodeFromSerializedJson(Jsons.serialize(output))),
           ).set(Tables.ATTEMPTS.UPDATED_AT, now)
           .where(
             Tables.ATTEMPTS.JOB_ID.eq(jobId),
@@ -1079,7 +1079,7 @@ class DefaultJobPersistence
         ),
       )
 
-    @Trace
+    @WithSpan
     override fun listJobsIncludingId(
       configTypes: Set<ConfigType>,
       connectionId: String?,
@@ -1573,19 +1573,13 @@ class DefaultJobPersistence
         // Strip literal nulls. Frankly, this should never happen in a JSON-serialized string,
         // but I'm keeping this logic in case there's historical reasons for needing this.
         ?.replace("""\u0000""".toRegex(), "")
-        // Strip the `\u0000` sequence, but only if it's not escaped.
-        // For example, `"\\u0000"` is perfectly valid, but `"\\\u0000"` needs to be stripped.
-        // In general: an even number of backslashes is fine; an odd number is not.
-        // This monstrosity matches:
-        // 1. Any non-backslash character
-        // 2. Any even number of backslashes (including 0) - these represent escaped backslashes.
-        // 3. A single backslash
-        // 4. u0000
-        // And captures 1+2 into $1.
-        // We then emit just $1 - which is equivalent to stripping 3+4 (i.e. the \u0000 sequence).
-        // (NB: triple-quoted string doesn't respect backslashes, but we still need to double up
-        // because regex itself needs us to escape those backslashes.)
-        ?.replace("""([^\\](\\\\)*)\\u0000""".toRegex(), "$1")
+        // Strip the `\u0000` sequence aggressively.
+        // This is overly conservative (e.g. """{"foo": "bar\\u0000"}""" is a perfectly safe string),
+        // but this is simple and reliable.
+        // Doing a fancier replacement to handle escape sequences would be complicated,
+        // and there are performance concerns in this function,
+        // so we don't necessarily want to parse the entire JSON tree and search for null chars.
+        ?.replace("""\\+u0000""".toRegex(), "<NULL>")
 
     /**
      * Needed to get the jooq sort field for the subquery job order by clause.
@@ -2138,23 +2132,26 @@ class DefaultJobPersistence
             record.get(ATTEMPT_NUMBER_FIELD, Int::class.javaPrimitiveType),
             record.get(JOB_ID, Long::class.java),
             Path.of(record.get("log_path", String::class.java)),
-            if (record.get("attempt_sync_config", String::class.java) == null) {
-              null
-            } else {
-              try {
+            try {
+              // record.get will try to deserialized the json blob before converting it to a string.
+              // We are swallowing the exception because we don't want to fail here if the JSON is invalid since it is a recoverable error.
+              val syncConfig = record.get("attempt_sync_config", String::class.java)
+              if (syncConfig == null) {
+                null
+              } else {
                 Jsons.deserialize(
-                  record.get("attempt_sync_config", String::class.java),
+                  syncConfig,
                   AttemptSyncConfig::class.java,
                 )
-              } catch (e: Exception) {
-                log.error(e) {
-                  "Failed to deserialize attempt_sync_config for job ${record.get(
-                    JOB_ID,
-                    Long::class.java,
-                  )} attempt ${record.get(ATTEMPT_NUMBER_FIELD, Int::class.javaPrimitiveType)}"
-                }
-                null
               }
+            } catch (e: Exception) {
+              log.error(e) {
+                "Failed to deserialize attempt_sync_config for job ${record.get(
+                  JOB_ID,
+                  Long::class.java,
+                )} attempt ${record.get(ATTEMPT_NUMBER_FIELD, Int::class.javaPrimitiveType)}"
+              }
+              null
             },
             if (attemptOutputString == null) null else parseJobOutputFromString(attemptOutputString),
             record.get("attempt_status", String::class.java).toEnum<AttemptStatus>()!!,

@@ -43,11 +43,16 @@ export const CreateDestinationPage: React.FC = () => {
 
   const [isAgentView, setIsAgentView] = useState(true);
 
-  // Fetch spec to check for OAuth - disable agent for OAuth connectors until we support it
-  const { data: destinationDefinitionSpecification, isLoading: isLoadingSpec } =
-    useGetDestinationDefinitionSpecificationAsync(destinationDefinitionId || null);
-  const hasOAuth = Boolean(destinationDefinitionSpecification?.advancedAuth);
-  const showAgentToggle = isAgentAssistedSetupEnabled && !hasOAuth && !isLoadingSpec;
+  const { isLoading: isLoadingSpec } = useGetDestinationDefinitionSpecificationAsync(destinationDefinitionId || null);
+
+  // Disable agent for custom connectors since they don't exist in our registry
+  // and we don't have access to their specs when the agent is initialized
+  const selectedDestinationDefinition = destinationDefinitions.find(
+    (d) => d.destinationDefinitionId === destinationDefinitionId
+  );
+  const isCustomConnector = selectedDestinationDefinition?.custom === true;
+
+  const showAgentToggle = isAgentAssistedSetupEnabled && !isLoadingSpec && !isCustomConnector;
   const shouldShowAgentView = showAgentToggle && isAgentView;
 
   const onSubmitDestinationForm = async (values: {

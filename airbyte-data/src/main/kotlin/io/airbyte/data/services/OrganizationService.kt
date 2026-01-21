@@ -1,11 +1,12 @@
 /*
- * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2026 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.data.services
 
 import io.airbyte.config.Organization
 import io.airbyte.data.services.shared.ResourcesByUserQueryPaginated
+import io.opentelemetry.instrumentation.annotations.WithSpan
 import java.util.Optional
 import java.util.UUID
 
@@ -13,6 +14,7 @@ import java.util.UUID
  * A service that manages organizations.
  */
 interface OrganizationService {
+  @WithSpan
   fun getOrganization(organizationId: UUID): Optional<Organization>
 
   fun getOrganizationForWorkspaceId(workspaceId: UUID): Optional<Organization>

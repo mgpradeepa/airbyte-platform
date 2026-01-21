@@ -32,17 +32,22 @@ export const CreateSourcePage: React.FC = () => {
   const isAgentAssistedSetupEnabled = useExperiment("connector.agentAssistedSetup");
   const [isAgentView, setIsAgentView] = useState(true);
 
-  // TODO: Support Oauth flow in agent view. Currently, the agent is not able to handle Oauth flow,
-  // so we are checking and disabling it for Oauth connectors as a temporary workaround.
-  // https://github.com/airbytehq/hydra-issues-internal/issues/28
-  const { data: sourceDefinitionSpecification, isLoading: isLoadingSpec } = useGetSourceDefinitionSpecificationAsync(
-    sourceDefinitionId || null
-  );
-  const hasOAuth = Boolean(sourceDefinitionSpecification?.advancedAuth);
-  const showAgentToggle = isAgentAssistedSetupEnabled && !hasOAuth && !isLoadingSpec;
+  const { isLoading: isLoadingSpec } = useGetSourceDefinitionSpecificationAsync(sourceDefinitionId || null);
+  const { sourceDefinitions } = useSourceDefinitionList();
+  const { mutateAsync: createSource } = useCreateSource();
+
+  // Disable agent for custom connectors since they don't exist in our registry
+  // and we don't have access to their specs when the agent is initialized
+  const selectedSourceDefinition = sourceDefinitions.find((s) => s.sourceDefinitionId === sourceDefinitionId);
+  const isCustomConnector = selectedSourceDefinition?.custom === true;
+
+  const showAgentToggle = isAgentAssistedSetupEnabled && !isLoadingSpec && !isCustomConnector;
   const shouldShowAgentView = showAgentToggle && isAgentView;
 
-  useTrackPage(PageTrackingCodes.SOURCE_NEW);
+  useTrackPage(PageTrackingCodes.SOURCE_NEW, {
+    agent_toggle_available: showAgentToggle,
+  });
+
   const navigate = useNavigate();
   const breadcrumbBasePath = `/${RoutePaths.Workspaces}/${params.workspaceId}/${RoutePaths.Source}`;
   const { formatMessage } = useIntl();
@@ -54,9 +59,6 @@ export const CreateSourcePage: React.FC = () => {
     },
     { label: formatMessage({ id: "sources.newSource" }) },
   ];
-
-  const { sourceDefinitions } = useSourceDefinitionList();
-  const { mutateAsync: createSource } = useCreateSource();
 
   const onSubmitSourceStep = async (values: {
     name: string;
