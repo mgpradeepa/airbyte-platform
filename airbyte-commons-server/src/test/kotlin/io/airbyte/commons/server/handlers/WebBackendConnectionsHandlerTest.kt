@@ -258,6 +258,7 @@ internal class WebBackendConnectionsHandlerTest {
         oAuthConfigSupplier,
         actorDefinitionVersionHelper,
         sourceService,
+        workspaceService,
         workspaceHelper,
         secretPersistenceService,
         actorDefinitionHandlerHelper,
@@ -1106,6 +1107,7 @@ internal class WebBackendConnectionsHandlerTest {
         "tags",
         "addTagsItem",
         "removeTagsItem",
+        "onDemandEnabled",
       )
 
     val methods =
@@ -1155,6 +1157,7 @@ internal class WebBackendConnectionsHandlerTest {
         "tags",
         "addTagsItem",
         "removeTagsItem",
+        "onDemandEnabled",
       )
 
     val methods =

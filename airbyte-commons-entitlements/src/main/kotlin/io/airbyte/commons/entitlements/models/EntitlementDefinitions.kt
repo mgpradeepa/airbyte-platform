@@ -106,8 +106,22 @@ object SourceDb2EnterpriseConnector : ConnectorEntitlement(
   override val name: String = "source-db2"
 }
 
+object SourceSharepointEnterpriseListsConnector : ConnectorEntitlement(
+  actorDefinitionId = UUID.fromString("ab26f98b-e0cd-4513-9975-0741a97441dc"),
+) {
+  override val name: String = "source-sharepoint-lists"
+}
+
 object GroupsEntitlement : FeatureEntitlement(
   featureId = "feature-groups",
+)
+
+object OnDemandCapacityEnabledEntitlement : FeatureEntitlement(
+  featureId = "feature-on-demand-capacity-enabled",
+)
+
+object CommittedDataWorkersEntitlement : FeatureEntitlement(
+  featureId = "feature-committed-data-workers",
 )
 
 object Entitlements {
@@ -134,7 +148,10 @@ object Entitlements {
       SourceSharepointEnterpriseConnector,
       SourceWorkdayEnterpriseConnector,
       SourceDb2EnterpriseConnector,
+      SourceSharepointEnterpriseListsConnector,
       GroupsEntitlement,
+      OnDemandCapacityEnabledEntitlement,
+      CommittedDataWorkersEntitlement,
     )
 
   private val BY_FEATURE_ID: Map<String, Entitlement> =

@@ -154,6 +154,13 @@ global:
     # -- The key within `secretName` where the password is stored
     #passwordSecretKey: "" # e.g."database-password"
 
+    # -- Replica database configuration (optional)
+    # If not configured, falls back to primary database values
+    replica: {}
+    #  url: "" # e.g. "jdbc:postgresql://replica-host:5432/db-airbyte"
+    #  user: ""
+    #  password: ""
+
   dataplaneGroups: {}
 
   migrations:
@@ -996,8 +1003,6 @@ server:
     hockeystackApiKey: ""
     launchdarklyKey: ""
     osanoKey: ""
-    posthogApiKey: ""
-    posthogHost: ""
     segmentToken: ""
     sonarApiUrl: ""
     zendeskKey: ""
@@ -2554,7 +2559,7 @@ manifestServer:
 
   image:
     repository: airbyte/manifest-server
-    tag: 7.4.2
+    tag: 7.10.0
     pullPolicy: IfNotPresent
 
   datadog:

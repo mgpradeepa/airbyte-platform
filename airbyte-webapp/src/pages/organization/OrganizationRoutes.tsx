@@ -4,11 +4,10 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import OrganizationSettingsLayout from "area/organization/OrganizationSettingsLayout";
 import { useCurrentOrganizationId } from "area/organization/utils";
 import { UserSettingsRoutes } from "area/settings/UserSettingsRoutes";
+import { CloudSettingsRoutePaths } from "cloud/views/settings/routePaths";
+import { useExperimentContext } from "core/services/Experiment";
 import { FeatureItem, useFeature } from "core/services/features";
 import { Intent, useGeneratedIntent } from "core/utils/rbac";
-import { useExperiment, useExperimentContext } from "hooks/services/Experiment";
-import { CloudSettingsRoutePaths } from "packages/cloud/views/settings/routePaths";
-import { EmbeddedOnboardingPage } from "pages/embedded/EmbeddedOnboardingPage/EmbeddedOnboardingPage";
 import { OrganizationSettingsPage } from "pages/SettingsPage/OrganizationSettingsPage";
 import { DestinationsPage, SourcesPage } from "pages/SettingsPage/pages/ConnectorsPage";
 import { LicenseSettingsPage } from "pages/SettingsPage/pages/LicenseDetailsPage/LicenseSettingsPage";
@@ -19,8 +18,8 @@ import { SSOOrganizationSettingsPage } from "pages/SettingsPage/pages/Organizati
 import { RoutePaths, SettingsRoutePaths } from "../routePaths";
 
 const OrganizationWorkspacesPage = React.lazy(() => import("pages/workspaces/OrganizationWorkspacesPage"));
-const OrganizationBillingPage = React.lazy(() => import("packages/cloud/views/billing/OrganizationBillingPage"));
-const OrganizationUsagePage = React.lazy(() => import("packages/cloud/views/billing/OrganizationUsagePage"));
+const OrganizationBillingPage = React.lazy(() => import("cloud/views/billing/OrganizationBillingPage"));
+const OrganizationUsagePage = React.lazy(() => import("cloud/views/billing/OrganizationUsagePage"));
 
 export const OrganizationRoutes: React.FC = () => {
   const organizationId = useCurrentOrganizationId();
@@ -29,13 +28,11 @@ export const OrganizationRoutes: React.FC = () => {
   const canViewOrgSettings = useGeneratedIntent(Intent.ViewOrganizationSettings, { organizationId });
   const canManageOrganizationBilling = useGeneratedIntent(Intent.ManageOrganizationBilling, { organizationId });
   const canViewOrganizationUsage = useGeneratedIntent(Intent.ViewOrganizationUsage, { organizationId });
-  const isEmbedded = useExperiment("platform.allow-config-template-endpoints");
 
   useExperimentContext("organization", organizationId);
 
   return (
     <Routes>
-      {isEmbedded && <Route path={RoutePaths.EmbeddedOnboarding} element={<EmbeddedOnboardingPage />} />}
       <Route path={`${SettingsRoutePaths.User}/*`} element={<UserSettingsRoutes />} />
       <Route element={<OrganizationSettingsLayout />}>
         <Route path={RoutePaths.Workspaces} element={<OrganizationWorkspacesPage />} />

@@ -9,9 +9,9 @@ import { Text } from "components/ui/Text";
 
 import { useCurrentOrganizationId } from "area/organization/utils/useCurrentOrganizationId";
 import { PageTrackingCodes, useTrackPage } from "core/services/analytics";
+import { useExperiment } from "core/services/Experiment";
 import { FeatureItem, useFeature } from "core/services/features";
 import { useIntent } from "core/utils/rbac";
-import { useExperiment } from "hooks/services/Experiment";
 import { DiagnosticsButton } from "pages/SettingsPage/components/DiagnosticButton";
 import { NestedRegionsView } from "pages/SettingsPage/components/NestedRegionsView";
 import { RegionsTable } from "pages/SettingsPage/components/RegionsTable";
@@ -25,7 +25,7 @@ export const GeneralOrganizationSettingsPage: React.FC = () => {
   const isDownloadDiagnosticsFlagEnabled = useExperiment("settings.downloadDiagnostics");
   const isDownloadDiagnosticsFeatureEnabled = useFeature(FeatureItem.DiagnosticsExport);
   const supportsRegionsTable = useFeature(FeatureItem.AllowChangeDataplanes);
-  const useNestedRegionsView = useExperiment("regions.nestedDataplaneView");
+  const useNestedRegionsView = useFeature(FeatureItem.SelfManagedRegions);
 
   // if EITHER flag OR feature is enabled, provide diagnostics
   // effectively: flag controls OSS+Cloud, feature controls SME

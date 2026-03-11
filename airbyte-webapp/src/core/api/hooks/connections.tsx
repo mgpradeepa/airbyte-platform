@@ -15,12 +15,12 @@ import { ExternalLink } from "components/ui/Link";
 
 import { useCurrentConnectionId } from "area/connection/utils/useCurrentConnectionId";
 import { useCurrentWorkspaceId } from "area/workspace/utils";
+import { CloudSettingsRoutePaths } from "cloud/views/settings/routePaths";
 import { useFormatError } from "core/errors";
 import { getFrequencyFromScheduleData, useAnalyticsService, Action, Namespace } from "core/services/analytics";
+import { useNotificationService } from "core/services/Notification";
 import { trackError } from "core/utils/datadog";
 import { links } from "core/utils/links";
-import { useNotificationService } from "hooks/services/Notification";
-import { CloudSettingsRoutePaths } from "packages/cloud/views/settings/routePaths";
 import { RoutePaths } from "pages/routePaths";
 
 import { useCurrentWorkspace, useInvalidateWorkspaceStateQuery } from "./workspaces";
@@ -57,7 +57,6 @@ import {
   ConnectionScheduleData,
   ConnectionScheduleType,
   ConnectionStateCreateOrUpdate,
-  ConnectionStatusesRead,
   ConnectionStatusRead,
   ConnectionStream,
   ConnectionSyncStatus,
@@ -827,29 +826,6 @@ export const useListConnectionsStatuses = (connectionIds: string[]) => {
   );
 };
 
-export const useListConnectionsStatusesAsync = (connectionIds: string[], enabled: boolean = true) => {
-  const requestOptions = useRequestOptions();
-  const queryKey = connectionsKeys.statuses(connectionIds);
-
-  return (
-    useQuery(queryKey, async () => getConnectionStatuses({ connectionIds }, requestOptions), {
-      enabled,
-      refetchInterval: CONNECTION_STATUS_REFETCH_INTERVAL,
-    }) ?? []
-  );
-};
-
-export const useGetCachedConnectionStatusesById = (connectionIds: string[]) => {
-  const queryClient = useQueryClient();
-  const queryData = queryClient.getQueriesData<ConnectionStatusesRead>(connectionsKeys.statuses());
-  const allStatuses = queryData.flatMap(([_, data]) => data ?? []);
-
-  return connectionIds.reduce<Record<string, ConnectionStatusRead | undefined>>((acc, connectionId) => {
-    acc[connectionId] = allStatuses.find((status) => status.connectionId === connectionId);
-    return acc;
-  }, {});
-};
-
 export const useSetConnectionStatusActiveJob = () => {
   const queryClient = useQueryClient();
 
@@ -896,9 +872,14 @@ export const useGetConnectionStatusesCounts = () => {
   const workspaceId = useCurrentWorkspaceId();
   const requestOptions = useRequestOptions();
 
-  return useQuery(connectionsKeys.statusCounts(workspaceId), () =>
-    webBackendGetConnectionStatusCounts({ workspaceId }, requestOptions)
-  );
+  return useQuery(connectionsKeys.statusCounts(workspaceId), async () => {
+    const result = await webBackendGetConnectionStatusCounts({ workspaceId }, requestOptions);
+    // TODO(https://github.com/airbytehq/hydra-issues-internal/issues/106): Remove this mock when backend implements queued field
+    return {
+      ...result,
+      queued: 0, // Mock: will be replaced by real backend data
+    };
+  });
 };
 
 export const useGetWorkspacesStatusesCounts = (

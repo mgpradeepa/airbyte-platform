@@ -1680,6 +1680,29 @@ paths:
           $ref: "#/components/responses/NotFoundResponse"
         "422":
           $ref: "#/components/responses/InvalidInputResponse"
+  /v1/sources/get_with_metadata:
+    post:
+      tags:
+        - source
+      summary: Get source with metadata
+      operationId: getSourceWithMetadata
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceIdWithSecretCoordinatesRequestBody"
+        required: true
+      responses:
+        "200":
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceReadWithMetadata"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
   /v1/sources/most_recent_source_actor_catalog:
     post:
       tags:
@@ -9546,7 +9569,9 @@ paths:
           in: query
       responses:
         "302":
-          description: Redirect to the URL requested in the initiate call with the created secret ID.
+          description: >-
+            Redirect to the URL requested in the initiate call. In api mode, includes secret_id and
+            internal IDs. In webapp mode, forwards provider callback query params.
       operationId: oauthCallback
       x-sdk-alias: oauthCallback
       x-sdk-group: OAuth
@@ -9588,6 +9613,9 @@ paths:
 
 
         That secret ID can be used to create a source with credentials in place of actual tokens.
+        By default (`clientType=api` or omitted), callback behavior is unchanged. If
+        `clientType=webapp`, callback redirects with provider callback query params and does not
+        create a secret during callback.
   /public/v1/connections:
     post:
       requestBody:
@@ -10258,6 +10286,43 @@ paths:
 
         In order to determine what the credential configuration needs to be, please see the connector specification of the relevant
         source/destination.
+  /public/v1/organizations/{organizationId}/oauthCredentials/{actorType}/{name}:
+    delete:
+      parameters:
+        - name: organizationId
+          schema:
+            format: UUID
+            type: string
+          in: path
+          required: true
+        - name: actorType
+          schema:
+            $ref: "#/components/schemas/ActorTypeEnum"
+          in: path
+          required: true
+        - name: name
+          schema:
+            type: string
+          in: path
+          required: true
+          description: The name of the source or destination i.e. google-ads
+      tags:
+        - public_organizations
+        - public
+        - Organizations
+      responses:
+        "204":
+          description: OAuth credential override was deleted successfully.
+        "400":
+          description: A field in the path has not been set appropriately.
+        "403":
+          description: API key is invalid.
+      operationId: deleteOrganizationOAuthCredentials
+      x-sdk-alias: deleteOrganizationOAuthCredentials
+      x-sdk-group: Organizations
+      summary: Delete OAuth override credentials for an organization and source/destination type.
+      description: >-
+        Delete a set of OAuth credentials that overrides the Airbyte-provided OAuth credentials used for source/destination OAuth.
 
   # Public APIs - Users
   /public/v1/users:
@@ -13619,6 +13684,17 @@ components:
       properties:
         sourceId:
           $ref: "#/components/schemas/SourceId"
+    SourceIdWithSecretCoordinatesRequestBody:
+      type: object
+      required:
+        - sourceId
+      properties:
+        sourceId:
+          $ref: "#/components/schemas/SourceId"
+        includeSecretCoordinates:
+          description: If true, the response will include secret coordinates in the connection configuration.
+          type: boolean
+          default: false
     SourceCloneRequestBody:
       description: The values required to configure the source. The schema for this should have an id of the existing source along with the configuration you want to change in case.
       type: object
@@ -13806,6 +13882,23 @@ components:
           additionalProperties:
             type: integer
           description: "Map of job status to count of connections whose latest job has that status"
+    SourceReadWithMetadata:
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/SourceRead"
+        - type: object
+          required:
+            - metadata
+          properties:
+            metadata:
+              $ref: "#/components/schemas/SourceMetadata"
+    SourceMetadata:
+      type: object
+      required:
+        - workspaceName
+      properties:
+        workspaceName:
+          type: string
     ActorStatus:
       description: An actor(source/destination) is active if it has at least one active or manual connection.
       type: string
@@ -14686,6 +14779,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Tag"
+        onDemandEnabled:
+          type: boolean
+          default: false
+          description: When enabled, this connection will use on-demand capacity if committed capacity is exhausted
     WebBackendConnectionCreate:
       type: object
       required:
@@ -14749,6 +14846,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Tag"
+        onDemandEnabled:
+          type: boolean
+          default: false
+          description: When enabled, this connection will use on-demand capacity if committed capacity is exhausted
     ConnectionStateCreateOrUpdate:
       type: object
       required:
@@ -14821,6 +14922,9 @@ components:
           nullable: true
           items:
             $ref: "#/components/schemas/Tag"
+        onDemandEnabled:
+          type: boolean
+          description: When enabled, this connection will use on-demand capacity if committed capacity is exhausted
     ConnectionUpdateWithReason:
       type: object
       required:
@@ -14895,6 +14999,9 @@ components:
           nullable: true
           items:
             $ref: "#/components/schemas/Tag"
+        onDemandEnabled:
+          type: boolean
+          description: When enabled, this connection will use on-demand capacity if committed capacity is exhausted
     ConnectionRead:
       type: object
       required:
@@ -14972,6 +15079,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Tag"
+        onDemandEnabled:
+          type: boolean
+          description: When enabled, this connection will use on-demand capacity if committed capacity is exhausted
     ConnectionStatusesRequestBody:
       type: object
       required:
@@ -15945,7 +16055,6 @@ components:
           required:
             - currency
             - amount
-            - dueDate
           properties:
             currency:
               type: string
@@ -16799,6 +16908,10 @@ components:
         metadata:
           type: object
           description: UI metadata required by frontend
+        agenticEnabledAt:
+          type: string
+          format: date-time
+          description: Timestamp when the user was enabled for agentic features. Null if user is data-replication-only.
 
     UserUpdate:
       type: object
@@ -16829,6 +16942,20 @@ components:
       properties:
         authUserId:
           type: string
+        isAgenticUser:
+          type: boolean
+          description: |
+            Indicates whether this user should have agentic features enabled.
+
+            Behavior:
+            - New user + true: User created with agenticEnabledAt timestamp
+            - New user + false/omitted: User created as non-agentic (agenticEnabledAt = null)
+            - Existing agentic user + any value: Timestamp preserved (immutable, cannot downgrade)
+            - Existing non-agentic user + true: User upgraded, agenticEnabledAt set to current time
+            - Existing non-agentic user + false/omitted: Remains non-agentic
+
+            Note: agenticEnabledAt is one-way - once set, it cannot be unset. Users can be upgraded
+            from non-agentic to agentic, but not downgraded.
 
     UserEmailRequestBody:
       type: object
@@ -19562,9 +19689,7 @@ components:
           type: string
         zendeskKey:
           type: string
-        posthogApiKey:
-          type: string
-        posthogHost:
+        fullstoryGuidesOrgId:
           type: string
     StreamStatusReadList:
       type: object
@@ -20446,7 +20571,7 @@ components:
       type: string
       x-sdk-component: true
     JobTypeEnum:
-      description: Enum that describes the different types of jobs that the platform runs.
+      description: Enum that describes the different types of jobs that the platform runs. When not specified, all job types are returned.
       enum:
         - sync
         - reset
@@ -20560,9 +20685,18 @@ components:
           type: string
         redirectUrl:
           description: >-
-            The URL to redirect the user to with the OAuth secret stored in the secret_id query
-            string parameter after authentication is complete.
+            Redirect target after OAuth callback. In `api` mode, callback includes `secret_id`,
+            `state`, `workspace_id`, and `definition_id`. In `webapp` mode, callback forwards all
+            provider callback query params.
           type: string
+        clientType:
+          description: >-
+            OAuth callback mode. `api` is default when omitted. `webapp` forwards provider callback
+            query params and does not create a secret during callback.
+          type: string
+          enum:
+            - api
+            - webapp
         workspaceId:
           format: uuid
           description: The workspace to create the secret and eventually the full source.

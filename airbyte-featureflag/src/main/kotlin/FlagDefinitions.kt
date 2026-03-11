@@ -98,6 +98,8 @@ object CheckImagePullBackoff : Temporary<Boolean>(key = "platform.check-image-pu
 
 object BillingMigrationMaintenance : Temporary<Boolean>(key = "billing.migrationMaintenance", default = false)
 
+object UseSubscriptionPriceIntervals : Temporary<Boolean>(key = "billing.use-subscription-price-intervals", default = false)
+
 // NOTE: this is deprecated in favor of FieldSelectionEnabled and will be removed once that flag is fully deployed.
 object FieldSelectionWorkspaces : EnvVar(envVar = "FIELD_SELECTION_WORKSPACES") {
   override fun enabled(ctx: Context): Boolean {
@@ -262,4 +264,8 @@ object EnableDataWorkerUsage : Temporary<Boolean>(key = "platform.enable-data-wo
 
 object UseVerifiedDomainsForSsoActivate : Temporary<Boolean>(key = "platform.use-verified-domains-for-sso-activate", default = false)
 
+object AutoGrantOrgPermissionsOnSsoActivation : Temporary<Boolean>(key = "platform.auto-grant-org-permissions-on-sso-activation", default = false)
+
 object UseOptimizedStreamStatusQuery : Temporary<Boolean>(key = "platform.use-optimized-stream-status-query", default = false)
+
+object UseReadReplicaForStreamStatus : Temporary<Boolean>(key = "platform.use-read-replica-for-stream-status", default = false)

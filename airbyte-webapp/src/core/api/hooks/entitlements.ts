@@ -32,7 +32,8 @@ const entitlementIdToFeatureItem: Record<string, FeatureItem> = {
   "feature-ai-copilot": FeatureItem.AICopilot,
   "feature-faster-sync-frequency": FeatureItem.AllowSyncFrequencyUnderOneHour,
   "feature-data-worker-capacity": FeatureItem.AllowDataWorkerCapacity,
-  "feature-self-managed-regions": FeatureItem.AllowChangeDataplanes,
+  "feature-on-demand-capacity-enabled": FeatureItem.OnDemandCapacity,
+  "feature-self-managed-regions": FeatureItem.SelfManagedRegions,
 };
 
 /**
